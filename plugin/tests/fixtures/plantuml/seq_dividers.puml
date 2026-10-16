@@ -1,0 +1,21 @@
+@startuml
+== Initialization ==
+
+Alice -> Bob: Authentication Request
+Bob --> Alice: Authentication Response
+
+== Repetition ==
+
+Alice -> Bob: Another authentication Request
+Alice <-- Bob: another authentication Response
+
+Alice -> Bob: Hello
+...
+Bob --> Alice: after a while
+... 5 minutes later ...
+Bob --> Alice: Bye
+|||
+Alice -> Bob: after a gap
+||45||
+Alice -> Bob: after a larger gap
+@enduml

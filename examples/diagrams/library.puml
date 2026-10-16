@@ -1,0 +1,38 @@
+@startuml
+title Library
+abstract class Item {
+  #title : String
+  #year : int
+  {abstract} +describe() : String
+}
+class Book {
+  -isbn : String
+  -pages : int
+}
+class Magazine {
+  -issue : int
+}
+class Member {
+  -name : String
+  +borrow(item : Item)
+}
+class Loan {
+  -dueDate : Date
+  +isOverdue() : boolean
+}
+enum LoanStatus {
+  ACTIVE
+  RETURNED
+  OVERDUE
+}
+interface Payable {
+  +pay(amount : Money)
+}
+Item <|-- Book
+Item <|-- Magazine
+Member "1" --> "*" Loan : has
+Loan "*" --> "1" Item
+Loan --> LoanStatus
+Loan ..|> Payable
+note right of Loan : A loan lasts\n14 days by default
+@enduml

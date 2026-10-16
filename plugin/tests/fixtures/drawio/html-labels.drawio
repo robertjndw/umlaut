@@ -1,0 +1,24 @@
+<mxfile host="app.diagrams.net" version="24.7.5">
+  <diagram id="html" name="HTML labels">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" page="1" pageWidth="827" pageHeight="1169">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="l1" value="&lt;b&gt;Bold&lt;/b&gt;, &lt;i&gt;italic&lt;/i&gt;, &lt;u&gt;underline&lt;/u&gt; and &lt;strike&gt;strike&lt;/strike&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="40" y="40" width="240" height="60" as="geometry" /></mxCell>
+        <mxCell id="l2" value="&lt;font color=&quot;#cc0000&quot; style=&quot;font-size: 18px;&quot;&gt;Red 18px&lt;/font&gt;&lt;br&gt;&lt;font face=&quot;Courier New&quot;&gt;Courier line&lt;/font&gt;&lt;div&gt;&lt;span style=&quot;color: rgb(0, 102, 204); font-weight: bold;&quot;&gt;Blue span&lt;/span&gt; &amp;amp; &amp;lt;escaped&amp;gt;&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="1"><mxGeometry x="320" y="40" width="240" height="90" as="geometry" /></mxCell>
+        <mxCell id="l3" value="Left top aligned text that wraps over several lines inside the box" style="text;html=1;strokeColor=#666666;fillColor=#f5f5f5;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;spacingLeft=6;spacingTop=4;" vertex="1" parent="1"><mxGeometry x="40" y="140" width="160" height="80" as="geometry" /></mxCell>
+        <mxCell id="l4" value="Right bottom aligned" style="text;html=1;strokeColor=#666666;fillColor=#f5f5f5;align=right;verticalAlign=bottom;whiteSpace=wrap;rounded=0;spacing=6;" vertex="1" parent="1"><mxGeometry x="220" y="140" width="160" height="80" as="geometry" /></mxCell>
+        <mxCell id="l5" value="No wrap but this text is very long for the shape" style="rounded=0;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="40" y="250" width="120" height="40" as="geometry" /></mxCell>
+        <mxCell id="l6" value="Rotated text" style="rounded=0;whiteSpace=wrap;html=1;horizontal=0;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="1"><mxGeometry x="420" y="140" width="50" height="150" as="geometry" /></mxCell>
+        <mxCell id="l7" value="Stickman" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;" vertex="1" parent="1"><mxGeometry x="520" y="170" width="30" height="60" as="geometry" /></mxCell>
+        <mxCell id="l8" value="Label right" style="ellipse;whiteSpace=wrap;html=1;aspect=fixed;labelPosition=right;verticalLabelPosition=middle;align=left;verticalAlign=middle;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="1"><mxGeometry x="600" y="170" width="40" height="40" as="geometry" /></mxCell>
+        <mxCell id="l9" value="Label with background" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;verticalLabelPosition=bottom;verticalAlign=top;labelBackgroundColor=#ffff88;labelBorderColor=#999999;" vertex="1" parent="1"><mxGeometry x="40" y="340" width="120" height="50" as="geometry" /></mxCell>
+        <mxCell id="l10" value="fontStyle 3 (bold italic), 20px" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontStyle=3;fontSize=20;fontColor=#336699;" vertex="1" parent="1"><mxGeometry x="220" y="330" width="340" height="40" as="geometry" /></mxCell>
+        <mxCell id="l11" value="&lt;ul&gt;&lt;li&gt;First item&lt;/li&gt;&lt;li&gt;Second item&lt;/li&gt;&lt;/ul&gt;&lt;div&gt;Footer&amp;nbsp;&amp;nbsp;&amp;nbsp;line&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;align=left;spacingLeft=8;" vertex="1" parent="1"><mxGeometry x="40" y="420" width="180" height="90" as="geometry" /></mxCell>
+        <mxCell id="l12" value="Plain text label&#xa;with a second line" style="rounded=0;whiteSpace=wrap;" vertex="1" parent="1"><mxGeometry x="260" y="420" width="180" height="60" as="geometry" /></mxCell>
+        <mxCell id="l13" value="Half transparent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ff0000;opacity=40;textOpacity=60;fontColor=#000000;opacity=40;" vertex="1" parent="1"><mxGeometry x="480" y="420" width="120" height="60" as="geometry" /></mxCell>
+        <mxCell id="l14" value="Gradient" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;gradientColor=#7ea6e0;strokeColor=#6c8ebf;" vertex="1" parent="1"><mxGeometry x="620" y="420" width="120" height="60" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

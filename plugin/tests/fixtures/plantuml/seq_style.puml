@@ -1,0 +1,31 @@
+@startuml
+title Styled **example**
+header some header
+footer page 1
+skinparam sequence {
+ArrowColor DeepSkyBlue
+ActorBorderColor DeepSkyBlue
+LifeLineBorderColor blue
+LifeLineBackgroundColor #A9DCDF
+ParticipantBorderColor DeepSkyBlue
+ParticipantBackgroundColor DodgerBlue
+ParticipantFontName Impact
+ParticipantFontSize 17
+ParticipantFontColor #A9DCDF
+ActorBackgroundColor aqua
+ActorFontColor DeepSkyBlue
+ActorFontSize 17
+ActorFontName Aapex
+}
+skinparam backgroundColor #FFFFEE
+skinparam maxMessageSize 100
+actor User
+participant "First Class" as A
+User -> A: This is a rather long message that wraps around
+A --> User: <color:red>short</color> and <b>bold</b> //italic//
+legend right
+  Some legend
+  with two lines
+endlegend
+caption A caption
+@enduml

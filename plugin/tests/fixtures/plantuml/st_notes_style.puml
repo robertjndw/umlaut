@@ -1,0 +1,22 @@
+@startuml
+left to right direction
+state "Waiting for input" as Wait #palegreen
+state Running #pink;line:red;line.dashed
+[*] --> Wait
+Wait --> Running : start
+Running --> Wait : stop
+Running --> Running : tick
+note right of Running : this is a note
+note left of Wait
+  A longer note
+  with two lines
+end note
+Wait --> [*]
+note on link : final
+state History {
+  [*] --> A
+  A -> B
+  [H] --> B
+  [H*] --> A
+}
+@enduml

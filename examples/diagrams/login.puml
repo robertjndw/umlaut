@@ -1,0 +1,22 @@
+@startuml
+title Login
+actor User
+participant "Web app" as Web
+participant "Auth service" as Auth
+database Users
+
+User -> Web : open /login
+Web -> Auth : POST /session
+activate Auth
+Auth -> Users : find(email)
+Users --> Auth : record
+alt password matches
+  Auth --> Web : 200 + token
+  Web --> User : dashboard
+else wrong password
+  Auth --> Web : 401
+  Web --> User : show error
+end
+deactivate Auth
+note right of Auth : rate limited to\n5 tries per minute
+@enduml

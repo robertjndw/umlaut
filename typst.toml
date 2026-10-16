@@ -1,0 +1,13 @@
+[package]
+name = "umlaut"
+version = "0.1.0"
+entrypoint = "src/lib.typ"
+authors = ["Robert Jandow <@robertjndw>"]
+license = "MIT"
+description = "Native draw.io and PlantUML diagrams, drawn with Typst elements at compile time."
+repository = "https://github.com/robertjndw/umlaut"
+keywords = ["drawio", "plantuml", "uml", "diagram"]
+categories = ["visualization"]
+disciplines = []
+compiler = "0.13.0"
+exclude = ["plugin", "tests", "examples", "docs", "Makefile", ".github", ".cargo", ".deps", ".tools", "install.sh", "install.ps1", ".gitignore", "*.pdf"]

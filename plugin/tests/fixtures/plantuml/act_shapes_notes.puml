@@ -1,0 +1,27 @@
+@startuml
+title Shapes and notes
+start
+:default;
+:procedure|
+:input<
+:output>
+:slanted/
+:concave]
+:convex}
+#palegreen:colored action;
+-> labelled arrow;
+:with a note;
+note right: This is a note
+:another;
+note left
+  multi line
+  note
+end note
+-[#red,dashed]-> red dashed;
+:end of line;
+(A)
+detach
+(A)
+:resumed;
+kill
+@enduml

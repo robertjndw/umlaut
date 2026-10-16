@@ -1,0 +1,8 @@
+@startuml
+!theme plain
+skinparam handwritten true
+skinparam shadowing false
+skinparam monochrome true
+Alice -> Bob : hi
+Bob --> Alice : there
+@enduml

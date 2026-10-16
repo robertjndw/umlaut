@@ -1,0 +1,19 @@
+# Rust build output. umlaut.wasm at the repo root is the shipped artifact and stays tracked.
+/plugin/target/
+
+# Compiled documents from local runs. Rendered README images live in docs/ and are tracked.
+*.pdf
+/examples/*.png
+/tests/**/*.png
+
+# Typst test runner (tytanic) output
+/tests/**/out/
+/tests/**/diff/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+/.deps/
+/.tools/

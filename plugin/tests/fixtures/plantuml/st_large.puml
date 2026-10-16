@@ -1,0 +1,47 @@
+@startuml
+title Order processing
+[*] --> Created
+
+state Created {
+  [*] --> Draft
+  Draft --> Validating : submit
+  Validating --> Draft : invalid
+  Validating --> Validated : ok
+  Validated --> [*]
+}
+
+Created --> Payment : validated
+
+state Payment {
+  [*] --> AwaitingPayment
+  AwaitingPayment --> Authorizing : card entered
+  Authorizing --> Paid : approved
+  Authorizing --> PaymentFailed : declined
+  PaymentFailed --> AwaitingPayment : retry
+  Paid --> [*]
+}
+
+state check <<choice>>
+Payment --> check : paid
+check --> Fulfillment : in stock
+check --> Backorder : out of stock
+Backorder --> check : restocked
+
+state Fulfillment {
+  [*] --> Picking
+  Picking --> Packing
+  Packing --> Shipping
+  --
+  [*] --> Invoicing
+  Invoicing --> Invoiced
+}
+
+Fulfillment --> Delivered : delivered
+Delivered : customer confirmed
+Delivered : rating requested
+Delivered --> Closed
+Payment --> Cancelled : timeout
+Created --> Cancelled : cancel
+Cancelled --> [*]
+Closed --> [*]
+@enduml

@@ -1,0 +1,9 @@
+@startuml
+start
+:init;
+if (ready?) then (yes)
+  :go;
+endif
+:done;
+end
+@enduml

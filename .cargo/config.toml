@@ -1,0 +1,4 @@
+# Graphviz recurses deeply on big graphs and keeps sizeable buffers on the stack; the
+# default 1 MiB of the wasm target is too little for it.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=-zstack-size=8388608"]

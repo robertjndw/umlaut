@@ -1,0 +1,70 @@
+<mxfile host="app.diagrams.net" version="24.7.5">
+  <diagram id="cont" name="Containers">
+    <mxGraphModel dx="1000" dy="700" grid="1" gridSize="10" page="1" pageWidth="1100" pageHeight="850">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="pool" value="Order service" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;startSize=30;fillColor=#dae8fc;strokeColor=#6c8ebf;swimlaneFillColor=#ffffff;" vertex="1" parent="1">
+          <mxGeometry x="40" y="40" width="560" height="320" as="geometry" />
+        </mxCell>
+        <mxCell id="lane1" value="Customer" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;startSize=30;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="pool">
+          <mxGeometry x="30" width="530" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="lane2" value="Warehouse" style="swimlane;horizontal=0;whiteSpace=wrap;html=1;startSize=30;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="pool">
+          <mxGeometry x="30" y="160" width="530" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="t1" value="Place order" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane1">
+          <mxGeometry x="40" y="50" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="t2" value="Pay" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane1">
+          <mxGeometry x="230" y="50" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="t3" value="Pick items" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane2">
+          <mxGeometry x="230" y="50" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="t4" value="Ship" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="lane2">
+          <mxGeometry x="400" y="50" width="110" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="f1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="lane1" source="t1" target="t2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="pool" source="t2" target="t3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="f3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" edge="1" parent="lane2" source="t3" target="t4"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="cls" value="Customer" style="swimlane;fontStyle=1;align=center;verticalAlign=top;childLayout=stackLayout;horizontal=1;startSize=26;horizontalStack=0;resizeParent=1;resizeParentMax=0;resizeLast=0;collapsible=1;marginBottom=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="660" y="40" width="200" height="130" as="geometry" />
+        </mxCell>
+        <mxCell id="cls1" value="- id: int&#xa;- name: String" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="cls">
+          <mxGeometry y="26" width="200" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="cls2" value="" style="line;strokeWidth=1;fillColor=none;align=left;verticalAlign=middle;spacingTop=-1;spacingLeft=3;spacingRight=3;rotatable=0;labelPosition=right;points=[];portConstraint=eastwest;strokeColor=inherit;" vertex="1" parent="cls">
+          <mxGeometry y="70" width="200" height="8" as="geometry" />
+        </mxCell>
+        <mxCell id="cls3" value="+ place(order: Order): void" style="text;strokeColor=none;fillColor=none;align=left;verticalAlign=top;spacingLeft=4;spacingRight=4;overflow=hidden;rotatable=0;points=[[0,0.5],[1,0.5]];portConstraint=eastwest;whiteSpace=wrap;html=1;" vertex="1" parent="cls">
+          <mxGeometry y="78" width="200" height="52" as="geometry" />
+        </mxCell>
+
+        <mxCell id="grp" value="" style="group" vertex="1" connectable="0" parent="1">
+          <mxGeometry x="660" y="220" width="200" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="g1" value="Group member" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="grp">
+          <mxGeometry width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="g2" value="Another" style="ellipse;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="grp">
+          <mxGeometry x="80" y="80" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="gedge" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="grp" source="g1" target="g2"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="hidden" value="I am hidden" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" visible="0" parent="1">
+          <mxGeometry x="40" y="400" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="collapsed" value="Collapsed" style="swimlane;whiteSpace=wrap;html=1;startSize=23;" vertex="1" collapsed="1" parent="1">
+          <mxGeometry x="40" y="400" width="140" height="23" as="geometry">
+            <mxRectangle x="40" y="400" width="140" height="23" as="alternateBounds" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="inside" value="never shown" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="collapsed">
+          <mxGeometry x="10" y="40" width="80" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

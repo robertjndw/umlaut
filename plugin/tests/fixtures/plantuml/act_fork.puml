@@ -1,0 +1,29 @@
+@startuml
+start
+fork
+  :action 1;
+fork again
+  :action 2;
+  :action 2b;
+fork again
+  :action 3;
+end fork
+if (multiprocessor?) then (yes)
+  fork
+    :Treatment 1;
+  fork again
+    :Treatment 2;
+  end merge
+else (monoproc)
+  :Treatment 1;
+  :Treatment 2;
+endif
+split
+   -[hidden]->
+   :A;
+split again
+   -[hidden]->
+   :B;
+end split
+stop
+@enduml

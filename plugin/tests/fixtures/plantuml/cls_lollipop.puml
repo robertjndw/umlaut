@@ -1,0 +1,11 @@
+@startuml
+class foo
+bar ()- foo
+class Service
+Service -() Port
+Service ..> Helper
+Helper "1" +-- "n" Inner
+Alpha x-- Beta
+Gamma #-- Delta
+Epsilon }-- Zeta
+@enduml

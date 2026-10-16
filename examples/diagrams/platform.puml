@@ -1,0 +1,20 @@
+@startuml
+package "Frontend" {
+  [Web app]
+}
+package "Backend" {
+  [API gateway] as GW
+  [Orders]
+  [Billing]
+}
+database "Postgres" as DB
+queue "Event bus" as Bus
+interface "REST" as REST
+
+[Web app] --> REST
+REST - GW
+GW --> [Orders]
+GW --> [Billing]
+[Orders] --> DB
+[Billing] ..> Bus : publishes
+@enduml

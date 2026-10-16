@@ -1,0 +1,13 @@
+@startuml
+class Center
+class Above
+class Below
+class Left
+class Right
+Center -up-> Above
+Center -down-> Below
+Center -left-> Left
+Center -right-> Right
+Left -[#red,dashed]-> Below : red
+Right ..> Below : dotted
+@enduml

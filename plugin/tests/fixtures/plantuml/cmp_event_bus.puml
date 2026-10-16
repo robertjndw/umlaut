@@ -1,0 +1,23 @@
+@startuml
+title Event bus
+package "Producers" {
+  [Orders]
+  [Billing]
+  [Shipping]
+}
+queue "Event Bus" as Bus
+interface "Webhook" as Hook
+package "Consumers" {
+  [Mailer]
+  [Analytics]
+}
+Orders ..> Bus : events
+Billing ..> Bus : events
+Shipping ..> Bus
+Bus ..> Mailer
+Bus ..> Analytics
+Hook - Mailer
+Orders --> Billing
+Orders --> Billing : retry
+Billing --> Shipping
+@enduml

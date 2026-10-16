@@ -1,0 +1,15 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam linetype ortho
+left to right direction
+component "Front End" as FE #lightblue
+component "API Gateway" as GW
+component "Auth Service" as Auth <<service>>
+component "Orders" as Ord
+database "Orders DB" as DB
+FE --> GW
+GW --> Auth : verify
+GW --> Ord
+Ord --> DB
+note bottom of DB : PostgreSQL
+@enduml

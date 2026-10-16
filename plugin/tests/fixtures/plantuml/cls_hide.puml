@@ -1,0 +1,24 @@
+@startuml
+hide empty members
+hide circle
+hide <<Hidden>> methods
+class Empty1
+class Empty2
+class WithFields {
+  id : int
+  name : String
+  save()
+}
+class Secret <<Hidden>> {
+  data
+  hidden()
+}
+show Empty2 circle
+Empty1 <|-- Empty2
+WithFields --> Secret
+together {
+  class Aa
+  class Bb
+}
+Aa -> Bb
+@enduml

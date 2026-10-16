@@ -1,0 +1,23 @@
+@startuml
+actor User
+node "Web Server" as web {
+  artifact "app.war" as war
+  [Servlet Engine]
+}
+node "Database Server" {
+  database "orders" as db
+  storage "Backups" as bk
+}
+cloud Internet
+queue "Job Queue" as q
+file "config.yml" as cfg
+card "Load Balancer" as lb
+User --> Internet
+Internet --> lb
+lb --> [Servlet Engine]
+[Servlet Engine] ..> war : runs
+war --> db : JDBC
+war -> q
+db -down-> bk
+cfg ..> war
+@enduml

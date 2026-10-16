@@ -1,0 +1,20 @@
+@startuml
+skinparam backgroundColor #FEFEFE
+skinparam activity {
+  BackgroundColor #FFEECC
+  BorderColor #AA7700
+  ArrowColor #AA7700
+  FontSize 14
+  DiamondBackgroundColor #FFFFFF
+}
+title Styled activity
+start
+:First;
+if (a?) then (yes)
+  :Second;
+else (no)
+  :Third;
+endif
+stop
+caption done
+@enduml

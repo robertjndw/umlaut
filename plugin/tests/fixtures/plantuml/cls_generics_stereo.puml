@@ -1,0 +1,16 @@
+@startuml
+class Foo<T extends Bar> {
+  +get() : T
+}
+class Stack<E>
+interface Repository<T, ID> {
+  findById(id : ID) : T
+}
+class Order <<Entity>> #lightyellow
+class Singleton << (S,#FF7700) Singleton >>
+class Multi <<Entity>> <<Aggregate>> {
+  id : Long
+}
+Stack "1" o-- "*" Foo
+Repository <|.. Order
+@enduml

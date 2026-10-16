@@ -1,0 +1,15 @@
+@startuml
+interface "Data Access" as DA
+[First Component]
+[Second Component] as Comp2
+() "Other Interface" as OI
+
+DA - [First Component]
+[First Component] --> Comp2 : calls
+Comp2 -( OI
+[First Component] -0)- Comp2
+note top of Comp2 : second one
+component Comp3 <<Service>> #lightyellow {
+}
+Comp2 ..> Comp3
+@enduml

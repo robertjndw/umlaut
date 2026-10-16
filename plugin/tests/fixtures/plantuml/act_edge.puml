@@ -1,0 +1,28 @@
+@startuml
+start
+if (a?) then (yes)
+else (no)
+  :only else;
+endif
+if (b?) then (yes)
+  :left;
+  stop
+else (no)
+  :right;
+endif
+while (w?)
+endwhile
+fork
+fork again
+  :x;
+end fork
+if (c?) then (yes)
+  :one;
+  kill
+else (no)
+  :two;
+  detach
+endif
+:never reached by arrows;
+end
+@enduml

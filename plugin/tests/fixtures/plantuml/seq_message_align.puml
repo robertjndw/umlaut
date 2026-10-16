@@ -1,0 +1,6 @@
+@startuml
+skinparam responseMessageBelowArrow true
+skinparam sequenceMessageAlign center
+Bob -> Alice : Request
+Alice --> Bob : Response below
+@enduml

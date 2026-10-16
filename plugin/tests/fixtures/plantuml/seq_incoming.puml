@@ -1,0 +1,14 @@
+@startuml
+participant Alice
+participant Bob
+[-> Alice : found
+Alice ->] : lost
+[<- Alice : reply
+Alice -> Bob
+note right
+  note after a message
+end note
+Bob -> Bob : self
+note left : left of self
+...
+@enduml

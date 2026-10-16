@@ -1,0 +1,5 @@
+<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="a" value="bad colors" style="rounded=1;fillColor=#GGGGGGGG;strokeColor=#12345;fontColor=zzz;gradientColor=#xyz;fontFamily=,;dashed=1;dashPattern=1e999 3" vertex="1" parent="1"><mxGeometry x="40" y="40" width="120" height="60" as="geometry"/></mxCell>
+<mxCell id="z" value="" style="ellipse;html=1;" vertex="1" parent="1"><mxGeometry x="300" y="60" width="0" height="0" as="geometry"/></mxCell>
+<mxCell id="e" value="&lt;span style=&quot;font-size:1e999px&quot;&gt;huge&lt;/span&gt; &lt;script&gt;alert(1)&lt;/script&gt;caf&amp;eacute;" style="html=1;endArrow=classic;" edge="1" parent="1" source="a" target="z"><mxGeometry relative="1" as="geometry"/></mxCell>
+</root></mxGraphModel>

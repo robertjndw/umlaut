@@ -1,0 +1,7 @@
+@startuml
+hide footbox
+title No bottom boxes
+Alice -> Bob : one
+Bob -> Carol : two
+Carol --> Alice : three
+@enduml

@@ -1,0 +1,22 @@
+@startuml
+participant Alice
+participant Bob
+Bob ->x Alice
+Bob -> Alice
+Bob ->> Alice
+Bob -\ Alice
+Bob \\- Alice
+Bob //-- Alice
+
+Bob ->o Alice
+Bob o\\-- Alice
+
+Bob <-> Alice
+Bob <->o Alice
+
+Bob -[#red]> Alice : hello
+Alice -[#0000FF]->Bob : ok
+Bob -> Bob : self message
+[-> Bob : from the left
+Bob ->] : to the right
+@enduml

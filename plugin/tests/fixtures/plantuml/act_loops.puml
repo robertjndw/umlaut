@@ -1,0 +1,13 @@
+@startuml
+start
+while (data available?) is (yes)
+  :read data;
+  :generate diagrams;
+endwhile (no)
+repeat
+  :read data;
+  :process;
+backward :log error;
+repeat while (more data?) is (yes) not (no)
+stop
+@enduml

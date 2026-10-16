@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest entry must match `compiler` in typst.toml.
+        typst: ["0.13.0", "0.15.1"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: plugin
+
+      - uses: typst-community/setup-typst@v4
+        with:
+          typst-version: ${{ matrix.typst }}
+
+      # wasi-sdk and wasi-stub (.tools) and the Graphviz sources (.deps) are downloaded
+      # with pinned checksums; the versions live in the Makefile and plugin/build.rs.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .tools
+            .deps
+          key: tools-${{ runner.os }}-${{ hashFiles('Makefile', 'plugin/build.rs') }}
+
+      - name: Install binaryen (wasm-opt)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
+      # The plugin must only import the two typst_env functions; anything else (WASI,
+      # wasm-bindgen glue) would fail to load in Typst.
+      - name: Build plugin
+        run: |
+          make wasm
+          wasm-dis umlaut.wasm | grep '(import' | tee imports.txt
+          test "$(grep -vc typst_env imports.txt)" = "0"
+
+      # Lints do not depend on the Typst version, so once is enough.
+      - name: Clippy
+        if: matrix.typst == '0.15.1'
+        run: cargo clippy --manifest-path plugin/Cargo.toml --all-targets -- -D warnings
+
+      - name: Tests
+        run: make test-plugin test-e2e
+
+      # -B because a fresh checkout leaves docs/ looking up to date.
+      - name: Examples compile
+        run: make -B examples
+
+      - name: Install script works
+        env:
+          TYPST_PACKAGE_PATH: ${{ runner.temp }}/packages
+        run: |
+          ./install.sh
+          version="$(sed -n 's/^version *= *"\(.*\)"/\1/p' typst.toml | head -n 1)"
+          printf '#import "@local/umlaut:%s": plantuml\n#plantuml("@startuml\\nA -> B: ok\\n@enduml")\n' "$version" > "$RUNNER_TEMP/t.typ"
+          typst compile "$RUNNER_TEMP/t.typ" "$RUNNER_TEMP/t.pdf"

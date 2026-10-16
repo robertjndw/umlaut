@@ -1,0 +1,25 @@
+@startuml
+title Dependencies across packages
+package "api" {
+  interface Store
+  interface Cache
+  class Client
+}
+package "impl" {
+  class SqlStore
+  class RedisCache
+  class Pool
+  class Metrics
+}
+Store <|.. SqlStore
+Cache <|.. RedisCache
+Client --> Cache
+Client "1" --> "0..*" Store : uses
+SqlStore ..> Store
+RedisCache --> Pool
+SqlStore "1" *-- "many" Pool
+Pool ..> Metrics
+SqlStore ..> Metrics
+RedisCache ..> Metrics
+Client ..> Metrics
+@enduml

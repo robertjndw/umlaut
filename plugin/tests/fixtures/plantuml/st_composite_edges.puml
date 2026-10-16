@@ -1,0 +1,18 @@
+@startuml
+[*] --> Closed
+Closed --> Connecting : connect()
+state Connecting {
+  [*] --> Resolving
+  Resolving --> Handshake : address found
+  Handshake --> [*]
+}
+Connecting --> Open : established
+Connecting --> Closed : timeout
+state Open {
+  [*] --> Idle
+  Idle --> Busy : request
+  Busy --> Idle : response
+}
+Open --> Closed : close()
+Closed --> [*]
+@enduml

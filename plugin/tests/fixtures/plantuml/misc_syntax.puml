@@ -1,0 +1,26 @@
+' a comment
+/' a block
+comment '/
+@startuml name
+title
+ Multi **line** title
+end title
+header
+ Top <i>right</i>
+endheader
+skinparam roundCorner 20
+skinparam {
+  defaultFontSize 12
+}
+participant "Long\nname" as A <<Service>> #lightgreen
+A -> B : a long message \
+ continued on the next line
+note over A, B
+  <b>bold</b> <color:red>red</color> ""mono""
+  //italic// __under__ --strike-- <size:18>big</size>
+  ~**escaped~** and <U+00E9>
+end note
+legend left
+  A legend
+endlegend
+@enduml

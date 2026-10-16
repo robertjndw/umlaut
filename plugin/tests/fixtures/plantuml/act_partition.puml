@@ -1,0 +1,20 @@
+@startuml
+start
+partition Initialization {
+  :read config;
+  :init logging;
+}
+partition "Running" #lightblue {
+  while (alive?) is (yes)
+    :tick;
+    if (error?) then (yes)
+      :log;
+      break
+    endif
+  endwhile (no)
+}
+rectangle "Cleanup" {
+  :free;
+}
+stop
+@enduml

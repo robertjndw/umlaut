@@ -1,0 +1,22 @@
+@startuml
+participant Alice
+actor Bob
+
+ref over Alice, Bob : init
+
+Alice -> Bob : hello
+
+ref over Bob
+  This can be on
+  several lines
+end ref
+
+box "Internal Service" #LightBlue
+participant Bob2
+participant Alice2
+end box
+participant Other
+Alice -> Bob2 : x
+Bob2 -> Alice2 : y
+Alice2 -> Other : z
+@enduml

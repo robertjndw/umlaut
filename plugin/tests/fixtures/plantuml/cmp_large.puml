@@ -1,0 +1,50 @@
+@startuml
+title Microservice platform
+package "Edge" {
+  [Load Balancer] as LB
+  [API Gateway] as GW
+  [Web App] as Web
+}
+package "Services" {
+  [Auth Service] as Auth
+  [User Service] as Users
+  [Order Service] as Orders
+  [Payment Service] as Pay
+  [Inventory Service] as Inv
+  [Notification Service] as Notify
+  [Search Service] as Search
+}
+package "Data" {
+  database "User DB" as UDB
+  database "Order DB" as ODB
+  database "Inventory DB" as IDB
+  queue "Event Bus" as Bus
+  storage "Search Index" as SI
+}
+cloud "Payment Provider" as PP
+cloud "Email Gateway" as Mail
+interface "REST" as REST
+actor Customer
+Customer --> Web
+Web --> LB
+LB --> GW
+GW - REST
+REST --> Auth
+REST --> Users
+REST --> Orders
+Auth --> UDB
+Users --> UDB
+Orders --> ODB
+Orders --> Pay : charge
+Orders --> Inv : reserve
+Inv --> IDB
+Pay --> PP
+Orders ..> Bus : events
+Inv ..> Bus
+Bus ..> Notify
+Notify --> Mail
+Bus ..> Search
+Search --> SI
+GW --> Search
+Orders --> Users : lookup
+@enduml

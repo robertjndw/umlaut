@@ -1,0 +1,17 @@
+@startuml
+skinparam classBackgroundColor #FEFECE
+skinparam classBorderColor #A80036
+skinparam classArrowColor #A80036
+skinparam linetype ortho
+skinparam classAttributeIconSize 0
+left to right direction
+class Account {
+  -balance : Money
+  +deposit(amount : Money)
+}
+class Customer
+class Branch
+Customer "1" --> "*" Account : owns
+Branch "1" o-- "*" Account
+Branch <|-- Headquarters
+@enduml

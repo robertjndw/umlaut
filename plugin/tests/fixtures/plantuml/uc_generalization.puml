@@ -1,0 +1,9 @@
+@startuml
+:Customer: <|-- :Premium Customer:
+(Search) <|-- (Search by name)
+(Search) <|-- (Search by tag)
+:Customer: -up-> (Search)
+:Premium Customer: -down-> (Export)
+(Export) .> (Search) : <<include>>
+note left of (Export) #lightgreen : only premium
+@enduml

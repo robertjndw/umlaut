@@ -1,0 +1,20 @@
+@startuml
+state "Req(Id)" as ReqId <<sdlreceive>>
+state "Minimum Latency" as MinLat
+state fork_state <<fork>>
+[*] --> fork_state
+fork_state --> State2
+fork_state --> State3
+
+state join_state <<join>>
+State2 --> join_state
+State3 --> join_state
+join_state --> State4
+
+state choice1 <<choice>>
+State4 --> choice1 : Is it ok?
+choice1 --> MinLat : yes
+choice1 --> ReqId : no
+MinLat --> [*]
+ReqId --> [*]
+@enduml

@@ -1,0 +1,46 @@
+[package]
+name = "umlaut-plugin"
+version = "0.1.0"
+edition = "2021"
+publish = false
+rust-version = "1.82"
+license = "MIT"
+
+[lib]
+# rlib lets the native unit and end-to-end tests link against the core logic.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+ciborium = "0.2"
+# draw.io: XML parsing and the compressed page format (base64, raw deflate, URL encoding).
+roxmltree = "0.20"
+miniz_oxide = "0.8"
+base64 = "0.22"
+percent-encoding = "2"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-minimal-protocol = "0.2.1"
+
+[build-dependencies]
+# Compiles Graphviz (see build.rs); sha2 verifies the downloaded source archive.
+cc = { version = "1", features = ["parallel"] }
+sha2 = "0.10"
+
+[dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+# Same optimization as release, without the single-unit LTO link that only the wasm
+# build benefits from.
+[profile.test-opt]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true

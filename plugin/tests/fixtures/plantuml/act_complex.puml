@@ -1,0 +1,19 @@
+@startuml
+start
+:Receive order;
+if (in stock?) then (yes)
+  fork
+    :Pick items;
+  fork again
+    :Create invoice;
+  end fork
+  :Ship;
+else (no)
+  while (supplier answers?) is (no)
+    :Ask supplier;
+  endwhile (yes)
+  :Restock;
+endif
+:Close order;
+stop
+@enduml

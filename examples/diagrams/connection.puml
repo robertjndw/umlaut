@@ -1,0 +1,13 @@
+@startuml
+[*] --> Closed
+Closed --> Connecting : connect()
+Connecting --> Open : established
+Connecting --> Closed : timeout
+state Open {
+  [*] --> Idle
+  Idle --> Busy : request
+  Busy --> Idle : response
+}
+Open --> Closed : close()
+Closed --> [*]
+@enduml

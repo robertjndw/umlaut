@@ -1,0 +1,98 @@
+@startuml
+title Library management
+package "Domain" {
+  abstract class Person {
+    -id : UUID
+    -name : String
+    -email : String
+    +getName() : String
+  }
+  class Member {
+    -joinedAt : Date
+    +borrow(item : Item)
+    +returnItem(item : Item)
+  }
+  class Librarian {
+    -employeeNo : String
+    +registerMember(m : Member)
+  }
+  abstract class Item {
+    #title : String
+    #year : int
+    {abstract} +describe() : String
+  }
+  class Book {
+    -isbn : String
+    -pages : int
+  }
+  class Magazine {
+    -issue : int
+  }
+  class DVD {
+    -minutes : int
+  }
+  class Loan {
+    -dueDate : Date
+    +isOverdue() : boolean
+  }
+  class Reservation {
+    -createdAt : Date
+  }
+  enum LoanStatus {
+    ACTIVE
+    RETURNED
+    OVERDUE
+  }
+  interface Payable {
+    +pay(amount : Money)
+  }
+  class Fine {
+    -amount : Money
+  }
+}
+package "Infrastructure" {
+  interface Repository<T> {
+    +find(id : UUID) : T
+    +save(entity : T)
+  }
+  class MemberRepository
+  class ItemRepository
+  class LoanRepository
+  class Database <<Singleton>>
+}
+package "Services" {
+  class LoanService {
+    +checkout(m : Member, i : Item) : Loan
+  }
+  class NotificationService
+  class FineCalculator
+}
+Person <|-- Member
+Person <|-- Librarian
+Item <|-- Book
+Item <|-- Magazine
+Item <|-- DVD
+Member "1" --> "0..*" Loan : has
+Loan "*" --> "1" Item
+Member "1" --> "*" Reservation
+Reservation "*" --> "1" Item
+Loan --> LoanStatus
+Fine ..|> Payable
+Loan "1" *-- "0..1" Fine
+Repository <|.. MemberRepository
+Repository <|.. ItemRepository
+Repository <|.. LoanRepository
+MemberRepository ..> Member
+ItemRepository ..> Item
+LoanRepository ..> Loan
+MemberRepository --> Database
+ItemRepository --> Database
+LoanRepository --> Database
+LoanService --> LoanRepository
+LoanService --> ItemRepository
+LoanService ..> NotificationService
+FineCalculator ..> Loan
+FineCalculator --> Fine
+LoanService --> FineCalculator
+note right of Loan : A loan lasts\n14 days by default
+@enduml
