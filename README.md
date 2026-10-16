@@ -138,6 +138,30 @@ The diagram then uses the raw block's monospace font. Pass `font:` in the rule i
 
 Stroke widths and text scale together with the diagram. Without `width` or `height` a diagram has its natural size: draw.io pixels become points, and PlantUML diagrams are sized from your text size.
 
+### Figures
+
+Diagrams go straight into `figure`, so they get captions, numbers and references like any picture. A ratio width is taken against the space the figure sits in:
+
+```typ
+#figure(
+  plantuml(read("login.puml"), width: 80%),
+  caption: [Logging in],
+) <login>
+
+See @login.
+```
+
+Typst counts these figures as images, so they share a counter and an outline with your other pictures. To number diagrams separately and list them on their own, give them a kind:
+
+```typ
+#let diagram-figure = figure.with(kind: "diagram", supplement: [Diagram])
+
+#outline(title: [Diagrams], target: figure.where(kind: "diagram"))
+#diagram-figure(drawio(read("pages.drawio")), caption: [First page])
+```
+
+![Figures](https://raw.githubusercontent.com/robertjndw/umlaut/main/docs/figures.png)
+
 ### Warnings
 
 By default nothing makes compilation fail just because the result is imperfect. Two kinds of problems are collected as warnings:
