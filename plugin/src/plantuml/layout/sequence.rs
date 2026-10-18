@@ -15,12 +15,12 @@
 
 use std::collections::BTreeMap;
 
-use super::shapes::{anchor_left, arrow, draw_icon, dashed, icon_size, note_shape, solid, IconKind, NoteKind, ARROW_DASH, DOTTED, LIFELINE_DASH};
+use super::shapes::{anchor_left, arrow, draw_icon, dashed, icon_size, note_shape, solid, IconKind, NoteKind, ARROW_DASH, DOTTED};
 use super::Body;
 use crate::plantuml::diagrams::sequence::*;
 use crate::plantuml::model::{LabelId, Measured};
 use crate::plantuml::skin::{self, Skin};
-use crate::scene::{HAlign, Paint, PathBuilder, Scene, Style, VAlign};
+use crate::scene::{HAlign, Paint, PathBuilder, Scene, Stroke, Style, VAlign};
 
 const LOOP_W: f32 = 36.0;
 const LOOP_H: f32 = 14.0;
@@ -64,6 +64,8 @@ fn solve(cols: usize, reqs: &Reqs) -> Vec<f32> {
 #[derive(Default)]
 struct Layers {
     bg: Scene,
+    /// Between the boxes (`bg`) and the lifelines, so a box fill never hides a highlight.
+    hl: Scene,
     life: Scene,
     frame: Scene,
     act: Scene,
@@ -92,6 +94,9 @@ struct OpenGroup {
     lo: Option<Ext>,
     hi: Option<Ext>,
     elses: Vec<(f32, Option<LabelId>)>,
+    /// Set for a highlight region, which has no frame, tab or text: its fill and the
+    /// position in the highlight layer it must be drawn at.
+    fill: Option<(Paint, usize)>,
 }
 
 struct Bar {
@@ -214,6 +219,14 @@ impl<'a> D<'a> {
         }
     }
 
+    fn group_stroke(&self, border: &str) -> Stroke {
+        let st = &self.skin.style;
+        match &st.group_dash {
+            Some(d) => dashed(border, st.group_width, d),
+            None => solid(border, st.group_width),
+        }
+    }
+
     fn fill_of(&self, p: &Participant) -> Paint {
         let k = p.kind.keyword();
         p.fill.clone().unwrap_or_else(|| self.skin.fill(&[&format!("sequence{k}"), k, "sequenceparticipant", "participant"], skin::PARTICIPANT_FILL))
@@ -232,7 +245,8 @@ impl<'a> D<'a> {
         let border = self.border_of(p);
         let k = p.kind.keyword();
         let radius = self.skin.radius(&[&format!("sequence{k}"), k, "sequenceparticipant", "participant"], 5.0);
-        let sty = || Style::new().fill(fill.clone()).stroke(solid(&border, 1.5));
+        let pw = self.skin.style.participant_width;
+        let sty = || Style::new().fill(fill.clone()).stroke(solid(&border, pw));
         let left = x - w / 2.0;
         let (tw, th) = self.meas.size(p.label);
         let sc = &mut self.layers.top;
@@ -265,13 +279,13 @@ impl<'a> D<'a> {
                 lid.move_to(r - c, t);
                 lid.cubic_to(r - c - c * kk, t, r - 2.0 * c, my - ry * kk, r - 2.0 * c, my);
                 lid.cubic_to(r - 2.0 * c, my + ry * kk, r - c - c * kk, b, r - c, b);
-                sc.push_path(lid, Style::new().stroke(solid(&border, 1.5)));
+                sc.push_path(lid, Style::new().stroke(solid(&border, pw)));
                 self.meas.text_in(sc, p.label, l + c, t, w - 3.0 * c, h, HAlign::Center, VAlign::Middle);
             }
             kind => {
                 let ik = icon_of(kind);
                 let (_, ih) = icon_size(ik);
-                draw_icon(sc, ik, x, top, &fill, &border, 1.5);
+                draw_icon(sc, ik, x, top, &fill, &border, pw);
                 self.meas.text_at(sc, p.label, x, top + ih + 3.0, HAlign::Center);
                 let _ = (tw, th);
             }
@@ -567,7 +581,7 @@ impl<'a> D<'a> {
         let top = self.cursor + 2.0;
         let tab_h = self.meas.h(tab) + 4.0;
         self.cursor = top + tab_h + 4.0;
-        self.groups.push(OpenGroup { tab, cond, top, lo: None, hi: None, elses: Vec::new() });
+        self.groups.push(OpenGroup { tab, cond, top, lo: None, hi: None, elses: Vec::new(), fill: None });
     }
 
     fn group_else(&mut self, cond: Option<LabelId>) {
@@ -577,6 +591,33 @@ impl<'a> D<'a> {
         if let Some(g) = self.groups.last_mut() {
             g.elses.push((y, cond));
         }
+    }
+
+    fn highlight_start(&mut self, fill: &Paint) {
+        let top = self.cursor + 2.0;
+        self.cursor = top + 4.0;
+        let slot = self.layers.hl.items.len();
+        self.groups.push(OpenGroup { tab: LabelId(0), cond: None, top, lo: None, hi: None, elses: Vec::new(), fill: Some((fill.clone(), slot)) });
+    }
+
+    fn highlight_end(&mut self) {
+        let Some(g) = self.groups.pop() else { return };
+        let Some((fill, slot)) = g.fill else { return };
+        let bottom = self.cursor + 2.0;
+        let default = self.ext(1, 0.0);
+        let (lo, hi) = (g.lo.unwrap_or(default), g.hi.unwrap_or(default));
+        // Wider than a group frame so activation bars stay inside the region.
+        let m = GROUP_MARGIN + 8.0;
+        let (left, right) = (lo.x - m, hi.x + m);
+        self.layers.hl.push_rect(left, g.top, right - left, bottom - g.top, 0.0, Style::new().fill(fill));
+        // Nested regions end first but have to be drawn on top of the enclosing one.
+        if let Some(rect) = self.layers.hl.items.pop() {
+            self.layers.hl.items.insert(slot, rect);
+        }
+        self.bounds(left, right);
+        self.cursor = bottom + 4.0;
+        // An enclosing group has to contain this region too.
+        self.extent(Ext { x: left, col: lo.col, off: lo.off - m }, Ext { x: right, col: hi.col, off: hi.off + m });
     }
 
     fn group_end(&mut self) {
@@ -609,13 +650,14 @@ impl<'a> D<'a> {
         self.bounds(left, right);
 
         let border = self.st.group_border.clone();
+        let (gw, frame) = (self.skin.style.group_width, self.group_stroke(&border));
         let fr = &mut self.layers.frame;
-        fr.push_rect(left, g.top, right - left, bottom - g.top, 0.0, Style::new().stroke(solid(&border, 1.5)));
+        fr.push_rect(left, g.top, right - left, bottom - g.top, 0.0, Style::new().stroke(frame));
         // Tab with the bottom right corner cut off.
         let cut = 6.0;
         fr.push_polygon(
             &[(left, g.top), (left + tab_w, g.top), (left + tab_w, g.top + tab_h - cut), (left + tab_w - cut, g.top + tab_h), (left, g.top + tab_h)],
-            Style::new().fill(self.st.group_tab_fill.clone()).stroke(solid(&border, 1.5)),
+            Style::new().fill(self.st.group_tab_fill.clone()).stroke(solid(&border, gw)),
         );
         self.meas.text_at(fr, g.tab, left + 8.0, g.top + 2.0, HAlign::Left);
         if let Some(c) = g.cond {
@@ -689,12 +731,13 @@ impl<'a> D<'a> {
         let top = self.cursor + 4.0;
         let h = tab_h + th + 8.0;
         let border = self.st.group_border.clone();
+        let (gw, frame) = (self.skin.style.group_width, self.group_stroke(&border));
         let sc = &mut self.layers.top;
-        sc.push_rect(left, top, right - left, h, 0.0, Style::new().fill(Paint::solid("#ffffff")).stroke(solid(&border, 1.5)));
+        sc.push_rect(left, top, right - left, h, 0.0, Style::new().fill(Paint::solid("#ffffff")).stroke(frame));
         let cut = 6.0;
         sc.push_polygon(
             &[(left, top), (left + tab_w, top), (left + tab_w, top + tab_h - cut), (left + tab_w - cut, top + tab_h), (left, top + tab_h)],
-            Style::new().fill(self.st.group_tab_fill.clone()).stroke(solid(&border, 1.5)),
+            Style::new().fill(self.st.group_tab_fill.clone()).stroke(solid(&border, gw)),
         );
         self.meas.text_at(sc, tab, left + 8.0, top + 2.0, HAlign::Left);
         self.meas.text_at(sc, label, (left + right) / 2.0, top + tab_h + 3.0, HAlign::Center);
@@ -715,6 +758,8 @@ impl<'a> D<'a> {
                 Event::GroupStart { tab, cond } => self.group_start(*tab, *cond),
                 Event::GroupElse(c) => self.group_else(*c),
                 Event::GroupEnd => self.group_end(),
+                Event::Highlight(fill) => self.highlight_start(fill),
+                Event::HighlightEnd => self.highlight_end(),
                 Event::Effect(e) => {
                     let y = self.cursor;
                     self.apply_effects(std::slice::from_ref(e), y, false);
@@ -815,8 +860,8 @@ fn draw(m: &Model, skin: &Skin, meas: &Measured, xs: &[f32], reqs0: Reqs) -> Out
         lifeline: skin.border(&["sequencelifeline", "lifeline"], skin::BORDER),
         arrow: skin.color(&["sequencearrowcolor", "arrowcolor"], skin::BORDER),
         arrow_w: skin.num(&["sequencearrowthickness", "arrowthickness"], 1.0),
-        act_fill: skin.fill(&["sequencelifeline", "lifeline"], skin::PARTICIPANT_FILL),
-        act_border: skin.border(&["sequencelifeline", "lifeline"], skin::BORDER),
+        act_fill: skin.fill(&["sequenceactivation", "sequencelifeline", "lifeline"], skin::PARTICIPANT_FILL),
+        act_border: skin.border(&["sequenceactivation", "sequencelifeline", "lifeline"], skin::BORDER),
         group_border: skin.border(&["sequencegroup", "sequence", "group"], skin::BLACK),
         group_tab_fill: skin.fill(&["sequencegroupheader", "sequencegroup"], skin::GROUP_TAB_FILL),
         note_fill: skin.fill(&["note", "sequencenote"], skin::NOTE_FILL),
@@ -911,7 +956,12 @@ fn draw(m: &Model, skin: &Skin, meas: &Measured, xs: &[f32], reqs0: Reqs) -> Out
         let y1 = d.life_end[i].unwrap_or(line_end);
         let x = d.x(i);
         let mut cut = y0;
-        let (dash, dot) = (dashed(&d.st.lifeline, 1.0, &LIFELINE_DASH), dashed(&d.st.lifeline, 1.0, &DOTTED));
+        let lw = skin.style.lifeline_width;
+        let dash = match &skin.style.lifeline_dash {
+            Some(p) => dashed(&d.st.lifeline, lw, p),
+            None => solid(&d.st.lifeline, lw),
+        };
+        let dot = dashed(&d.st.lifeline, lw, &DOTTED);
         for &(a, b) in &d.delays {
             if b <= y0 || a >= y1 {
                 continue;
@@ -936,7 +986,7 @@ fn draw(m: &Model, skin: &Skin, meas: &Measured, xs: &[f32], reqs0: Reqs) -> Out
         let left = d.x(a) - d.head[a].0 / 2.0 - 5.0;
         let right = d.x(z) + d.head[z].0 / 2.0 + 5.0;
         let fill = b.fill.clone().unwrap_or_else(|| Paint::solid("#ffffff00"));
-        d.layers.bg.push_rect(left, 0.0, right - left, bottom + 2.0, 0.0, Style::new().fill(fill).stroke(solid(skin::BLACK, 1.0)));
+        d.layers.bg.push_rect(left, 0.0, right - left, bottom + 2.0, 0.0, Style::new().fill(fill).stroke(solid(&skin.style.box_border, skin.style.box_width)));
         if let Some(l) = b.label {
             let (cx, _) = ((left + right) / 2.0, 0.0);
             meas.text_at(&mut d.layers.bg, l, cx, 4.0, HAlign::Center);
@@ -950,7 +1000,7 @@ fn draw(m: &Model, skin: &Skin, meas: &Measured, xs: &[f32], reqs0: Reqs) -> Out
         d.layers.act.items.extend(lvl.items);
     }
     let mut scene = Scene::new(0.0, 0.0);
-    for layer in [&mut d.layers.bg, &mut d.layers.life, &mut d.layers.frame, &mut d.layers.act, &mut d.layers.top] {
+    for layer in [&mut d.layers.bg, &mut d.layers.hl, &mut d.layers.life, &mut d.layers.frame, &mut d.layers.act, &mut d.layers.top] {
         scene.items.append(&mut layer.items);
     }
     scene.translate(-min_x, 0.0);

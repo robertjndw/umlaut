@@ -7,7 +7,7 @@
 mod decode;
 mod edges;
 mod geometry;
-mod label;
+pub(crate) mod label;
 mod shapes;
 mod style;
 

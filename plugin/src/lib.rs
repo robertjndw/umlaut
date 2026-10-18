@@ -33,6 +33,9 @@ pub mod graphviz;
 pub mod plantuml;
 pub mod scene;
 
+#[cfg(test)]
+pub(crate) mod test_util;
+
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 

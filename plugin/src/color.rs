@@ -61,19 +61,96 @@ const NAMES: &[(&str, u32)] = &[
     ("steelblue", 0x4682b4), ("tan", 0xd2b48c), ("teal", 0x008080), ("thistle", 0xd8bfd8),
     ("tomato", 0xff6347), ("turquoise", 0x40e0d0), ("violet", 0xee82ee), ("wheat", 0xf5deb3),
     ("white", 0xffffff), ("whitesmoke", 0xf5f5f5), ("yellow", 0xffff00), ("yellowgreen", 0x9acd32),
-    // Colors PlantUML adds on top of the HTML set.
+];
+
+/// Colors PlantUML adds on top of the HTML set.
+const PLANTUML_NAMES: &[(&str, u32)] = &[
     ("application", 0xffffcc), ("business", 0xffffcc), ("implementation", 0xc0ffc0), ("motivation", 0xd1bddb),
     ("physical", 0xc9ffc9), ("strategy", 0xf8e7c0), ("technology", 0xc9ffc9),
 ];
 
 pub fn named(name: &str) -> Option<u32> {
     let key: String = name.chars().filter(|c| !c.is_whitespace()).collect::<String>().to_ascii_lowercase();
-    NAMES.iter().find(|(n, _)| *n == key).map(|&(_, v)| v)
+    NAMES.iter().chain(PLANTUML_NAMES).find(|(n, _)| *n == key).map(|&(_, v)| v)
 }
 
 /// `named` as an opaque `#rrggbbaa` color.
 pub fn named_hex(name: &str) -> Option<String> {
     named(name).map(|v| format!("#{v:06x}ff"))
+}
+
+/// `#rrggbbaa` for a CSS color: hex (3, 4, 6 or 8 digits), `rgb()`/`rgba()`,
+/// `hsl()`/`hsla()` in the comma or the space syntax, a CSS color name or `transparent`.
+/// `None` for anything else. Unlike `named`, PlantUML's extra names are not accepted.
+pub fn parse_css(s: &str) -> Option<String> {
+    let t = s.trim().to_ascii_lowercase();
+    if let Some(hex) = t.strip_prefix('#') {
+        // CSS also has `#rgba`, which `normalize` does not.
+        if hex.len() == 4 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Some(format!("#{}", hex.chars().flat_map(|ch| [ch, ch]).collect::<String>()));
+        }
+        return normalize(&t);
+    }
+    if t == "transparent" {
+        return Some("#00000000".into());
+    }
+    if let Some((func, args)) = t.strip_suffix(')').and_then(|r| r.split_once('(')) {
+        let parts: Vec<&str> = args.split(|c: char| c == ',' || c == '/' || c.is_whitespace()).filter(|p| !p.is_empty()).collect();
+        if parts.len() != 3 && parts.len() != 4 {
+            return None;
+        }
+        let alpha = match parts.get(3) {
+            Some(a) => unit_interval(a)?,
+            None => 1.0,
+        };
+        let (r, g, b) = match func.trim() {
+            "rgb" | "rgba" => {
+                let ch = |p: &str| match p.strip_suffix('%') {
+                    Some(v) => Some(v.parse::<f32>().ok()? / 100.0 * 255.0),
+                    None => p.parse::<f32>().ok(),
+                };
+                (ch(parts[0])?, ch(parts[1])?, ch(parts[2])?)
+            }
+            "hsl" | "hsla" => {
+                let hue = parts[0].strip_suffix("deg").unwrap_or(parts[0]).parse::<f32>().ok()?;
+                let pct = |p: &str| p.strip_suffix('%').unwrap_or(p).parse::<f32>().ok().map(|v| (v / 100.0).clamp(0.0, 1.0));
+                hsl_to_rgb(hue, pct(parts[1])?, pct(parts[2])?)
+            }
+            _ => return None,
+        };
+        if ![r, g, b].iter().all(|v| v.is_finite()) {
+            return None;
+        }
+        let byte = |v: f32| v.clamp(0.0, 255.0).round() as u8;
+        return Some(format!("#{:02x}{:02x}{:02x}{:02x}", byte(r), byte(g), byte(b), byte(alpha * 255.0)));
+    }
+    NAMES.iter().find(|(n, _)| *n == t).map(|&(_, v)| format!("#{v:06x}ff"))
+}
+
+/// An alpha value: a number or a percentage, clamped to 0..=1.
+fn unit_interval(p: &str) -> Option<f32> {
+    let v = match p.strip_suffix('%') {
+        Some(v) => v.parse::<f32>().ok()? / 100.0,
+        None => p.parse::<f32>().ok()?,
+    };
+    v.is_finite().then(|| v.clamp(0.0, 1.0))
+}
+
+/// Channels in 0..=255 for a hue in degrees and saturation and lightness in 0..=1.
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
+    let h = h.rem_euclid(360.0) / 60.0;
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - (h % 2.0 - 1.0).abs());
+    let (r, g, b) = match h as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    ((r + m) * 255.0, (g + m) * 255.0, (b + m) * 255.0)
 }
 
 #[cfg(test)]
@@ -97,5 +174,39 @@ mod tests {
         assert!(!is_valid_output("#00ff00"));
         assert!(!is_valid_output("#GGGGGGGG"));
         assert!(!is_valid_output("#\u{e9}\u{e9}0000ff"));
+    }
+
+    #[test]
+    fn css_hex_forms() {
+        assert_eq!(parse_css("#f00").as_deref(), Some("#ff0000ff"));
+        assert_eq!(parse_css("#f008").as_deref(), Some("#ff000088"));
+        assert_eq!(parse_css("#ECECFF").as_deref(), Some("#ececffff"));
+        assert_eq!(parse_css("#11223344").as_deref(), Some("#11223344"));
+        assert_eq!(parse_css("#12345"), None);
+        assert_eq!(parse_css("336699"), None);
+    }
+
+    #[test]
+    fn css_rgb_and_hsl() {
+        assert_eq!(parse_css("rgb(255, 0, 128)").as_deref(), Some("#ff0080ff"));
+        assert_eq!(parse_css("RGB(255 0 128)").as_deref(), Some("#ff0080ff"));
+        assert_eq!(parse_css("rgba(0,0,0,0.5)").as_deref(), Some("#00000080"));
+        assert_eq!(parse_css("rgb(100%, 0%, 0% / 50%)").as_deref(), Some("#ff000080"));
+        assert_eq!(parse_css("rgb(300, -5, 0)").as_deref(), Some("#ff0000ff"));
+        assert_eq!(parse_css("hsl(0, 100%, 50%)").as_deref(), Some("#ff0000ff"));
+        assert_eq!(parse_css("hsl(120deg 100% 25%)").as_deref(), Some("#008000ff"));
+        assert_eq!(parse_css("hsla(240, 100%, 50%, 0.5)").as_deref(), Some("#0000ff80"));
+        assert_eq!(parse_css("hsl(-120, 100%, 50%)").as_deref(), Some("#0000ffff"));
+        assert_eq!(parse_css("hsl(60, 0%, 100%)").as_deref(), Some("#ffffffff"));
+    }
+
+    #[test]
+    fn css_names_and_garbage() {
+        assert_eq!(parse_css(" RebeccaPurple ").as_deref(), Some("#663399ff"));
+        assert_eq!(parse_css("transparent").as_deref(), Some("#00000000"));
+        assert_eq!(parse_css("business"), None, "PlantUML-only names are not CSS");
+        for bad in ["", "rgb(1,2)", "rgb(a,b,c)", "rgb(1,2,3,4,5)", "foo(1,2,3)", "rgb(1,2,3", "rgb(nan,0,0)", "hsl(1,2%,3%,x)"] {
+            assert_eq!(parse_css(bad), None, "{bad}");
+        }
     }
 }

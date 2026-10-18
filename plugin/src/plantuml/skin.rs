@@ -18,6 +18,7 @@ use std::collections::HashMap;
 
 use super::colors::{parse_color, parse_paint, to_gray};
 use super::creole::Base;
+use super::layout::shapes::{NoteKind, LIFELINE_DASH};
 use crate::scene::{hex, Paint};
 
 pub const BORDER: &str = "#181818";
@@ -32,9 +33,49 @@ fn norm(key: &str) -> String {
     key.chars().filter(|c| c.is_ascii_alphanumeric()).collect::<String>().to_ascii_lowercase()
 }
 
+/// Drawing choices that no skinparam reaches. The default is PlantUML's own look; other
+/// front ends (Mermaid) set these directly, so a `skinparam` in the source cannot.
+#[derive(Debug, Clone)]
+pub struct Shapes {
+    /// Dash of sequence lifelines, `None` for solid.
+    pub lifeline_dash: Option<[f32; 2]>,
+    pub lifeline_width: f32,
+    /// Outline of a participant `box`.
+    pub box_border: String,
+    pub box_width: f32,
+    /// Dash of the frame around a sequence group, `None` for solid.
+    pub group_dash: Option<[f32; 2]>,
+    pub group_width: f32,
+    pub participant_width: f32,
+    /// Shape of notes in graph diagrams.
+    pub note_kind: NoteKind,
+    /// Dash of dashed links in graph diagrams.
+    pub link_dash: [f32; 2],
+    /// Fill behind link labels, `None` to leave the line visible through them.
+    pub label_background: Option<Paint>,
+}
+
+impl Default for Shapes {
+    fn default() -> Shapes {
+        Shapes {
+            lifeline_dash: Some(LIFELINE_DASH),
+            lifeline_width: 1.0,
+            box_border: BLACK.to_string(),
+            box_width: 1.0,
+            group_dash: None,
+            group_width: 1.5,
+            participant_width: 1.5,
+            note_kind: NoteKind::Note,
+            link_dash: [7.0, 5.0],
+            label_background: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Skin {
     params: HashMap<String, String>,
+    pub style: Shapes,
 }
 
 impl Skin {
@@ -170,6 +211,26 @@ mod tests {
         assert_eq!(s.fill(&["sequenceparticipant", "participant"], PARTICIPANT_FILL).color, "#0000ffff");
         assert_eq!(s.fill(&["participant"], PARTICIPANT_FILL).color, "#ff0000ff");
         assert_eq!(s.fill(&["actor"], PARTICIPANT_FILL).color, hex(PARTICIPANT_FILL));
+    }
+
+    #[test]
+    fn default_shapes_are_plantumls_own_look() {
+        let st = Skin::new().style;
+        assert_eq!(st.lifeline_dash, Some([5.0, 5.0]));
+        assert_eq!((st.lifeline_width, st.box_width, st.group_width, st.participant_width), (1.0, 1.0, 1.5, 1.5));
+        assert_eq!(st.box_border, BLACK);
+        assert!(st.group_dash.is_none() && st.label_background.is_none());
+        assert_eq!((st.note_kind, st.link_dash), (NoteKind::Note, [7.0, 5.0]));
+    }
+
+    #[test]
+    fn activation_colors_fall_back_to_the_lifeline_keys() {
+        let mut s = Skin::new();
+        s.set("sequenceLifeLineBackgroundColor", "red");
+        let keys = ["sequenceactivation", "sequencelifeline", "lifeline"];
+        assert_eq!(s.fill(&keys, PARTICIPANT_FILL).color, "#ff0000ff");
+        s.set("sequenceActivationBackgroundColor", "blue");
+        assert_eq!(s.fill(&keys, PARTICIPANT_FILL).color, "#0000ffff");
     }
 
     #[test]

@@ -68,6 +68,8 @@ pub struct Model {
     pub ents: Vec<Ent>,
     pub links: Vec<Link>,
     pub lr: bool,
+    /// Ranks run bottom to top or right to left (Mermaid `direction BT|RL`).
+    pub reverse: bool,
     /// Per composite state: whether its regions are stacked (`--`) or side by side (`||`).
     pub stacked: Vec<(usize, bool)>,
 }
@@ -101,7 +103,7 @@ pub fn parse(lines: &[Line], ctx: &mut Ctx) -> Result<Model, String> {
     if p.ents.is_empty() {
         return err(lines.first().map_or(1, |l| l.no), "the state diagram is empty");
     }
-    Ok(Model { ents: p.ents, links: p.links, lr: p.lr, stacked: p.stacked })
+    Ok(Model { ents: p.ents, links: p.links, lr: p.lr, reverse: false, stacked: p.stacked })
 }
 
 impl P<'_> {

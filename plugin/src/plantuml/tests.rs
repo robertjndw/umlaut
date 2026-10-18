@@ -2,55 +2,17 @@
 //! Text is "measured" with a made-up font (every character 0.55 em wide, lines 1.2 em
 //! high), which is enough to check the layout invariants without Typst.
 
-use std::path::PathBuf;
-
 use super::model::Measured;
 use super::*;
-use crate::scene::{Item, Label, Run};
-
-fn fixture_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/plantuml")
-}
+use crate::scene::{Item, Label};
+use crate::test_util::{fixtures as shared_fixtures, render_with, sizes};
 
 fn fixtures(prefix: &str) -> Vec<(String, String)> {
-    let mut out: Vec<_> = std::fs::read_dir(fixture_dir())
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().is_some_and(|e| e == "puml"))
-        .map(|p| (p.file_stem().unwrap().to_string_lossy().to_string(), std::fs::read_to_string(&p).unwrap()))
-        .filter(|(n, _)| n.starts_with(prefix))
-        .collect();
-    out.sort();
-    assert!(!out.is_empty(), "no fixtures with prefix {prefix}");
-    out
-}
-
-fn fake_size(l: &Label) -> (f32, f32) {
-    let mut lines: Vec<(f32, f32)> = vec![(0.0, 0.0)];
-    for r in &l.runs {
-        let cur = lines.last_mut().unwrap();
-        if r.br {
-            lines.push((0.0, 0.0));
-            continue;
-        }
-        cur.0 += r.text.chars().count() as f32 * r.size * 0.55;
-        cur.1 = cur.1.max(r.size * 1.2);
-    }
-    let natural = lines.iter().map(|l| l.0).fold(0.0, f32::max);
-    let line_h = lines.iter().map(|l| l.1).fold(0.0, f32::max).max(l.runs.first().map_or(12.0, |r: &Run| r.size * 1.2));
-    match l.wrap_width {
-        Some(w) => (w, line_h * (lines.len() as f32).max((natural / w).ceil())),
-        None => (natural, line_h * lines.len() as f32),
-    }
-}
-
-fn sizes(labels: &[Label]) -> Vec<(f32, f32)> {
-    labels.iter().map(fake_size).collect()
+    shared_fixtures("plantuml", "puml", prefix)
 }
 
 fn render(src: &str) -> Result<Scene, String> {
-    let labels = labels(src.as_bytes())?;
-    layout(src.as_bytes(), &sizes(&labels))
+    render_with(labels, layout, src)
 }
 
 #[test]

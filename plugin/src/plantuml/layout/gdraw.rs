@@ -3,11 +3,11 @@
 //! (cloud, cylinder, 3D box) that more than one diagram type needs.
 
 use super::graph::{dist, lerp, Edge, End, Graph, Hint, Layout, Opts, Pt, Rect, Route, Style as LineStyle};
-use super::shapes::{arrowhead, dashed, head_inset, note_shape, solid, Head, NoteKind};
+use super::shapes::{arrowhead, dashed, head_inset, note_shape, solid, Head};
 use crate::plantuml::diagrams::gcommon::{Arrow, Deco, GroupStyle, Link};
 use crate::plantuml::model::{LabelId, Measured};
-use crate::plantuml::skin::{self, Skin};
-use crate::scene::{HAlign, Paint, PathBuilder, Scene, Stroke, Style};
+use crate::plantuml::skin::{self, Shapes, Skin};
+use crate::scene::{HAlign, Paint, PathBuilder, Scene, Stroke, Style, VAlign};
 
 /// What the tests check after a graph diagram is laid out: boxes and containers by
 /// entity index, routes by link index.
@@ -85,9 +85,9 @@ impl Slot {
 
 /// Dot options for a graph diagram, with `skinparam nodesep` and `ranksep` (pixels, as
 /// in PlantUML) overriding the spacing.
-pub fn graph_opts(skin: &Skin, lr: bool) -> Opts {
+pub fn graph_opts(skin: &Skin, lr: bool, reverse: bool) -> Opts {
     let d = Opts::default();
-    Opts { lr, style: line_style(skin), node_sep: skin.num(&["nodesep"], d.node_sep).max(2.0), rank_sep: skin.num(&["ranksep"], d.rank_sep).max(2.0) }
+    Opts { lr, reverse, style: line_style(skin), node_sep: skin.num(&["nodesep"], d.node_sep).max(2.0), rank_sep: skin.num(&["ranksep"], d.rank_sep).max(2.0) }
 }
 
 pub fn line_style(skin: &Skin) -> LineStyle {
@@ -125,7 +125,7 @@ pub fn draw_links(scene: &mut Scene, lay: &Layout, links: &[Link], edge_of_link:
             continue;
         }
         let (from_card, to_card) = if cards { (l.from_card, l.to_card) } else { (None, None) };
-        let d = LinkDraw { arrow: &l.arrow, color, label: l.label, label_dir: l.label_dir, from_card, to_card };
+        let d = LinkDraw { arrow: &l.arrow, color, label: l.label, label_dir: l.label_dir, from_card, to_card, shapes: &skin.style };
         draw_link(scene, &lay.routes[*ei], &d, m);
     }
     for r in note_routes {
@@ -188,6 +188,8 @@ pub fn deco_head(d: Deco) -> Head {
         Deco::Crowfoot => Head::Crowfoot,
         Deco::Lollipop => Head::Lollipop,
         Deco::Socket => Head::Socket,
+        Deco::Circle => Head::Circle,
+        Deco::Point => Head::Point,
     }
 }
 
@@ -234,6 +236,7 @@ pub struct LinkDraw<'a> {
     pub label_dir: Option<bool>,
     pub from_card: Option<LabelId>,
     pub to_card: Option<LabelId>,
+    pub shapes: &'a Shapes,
 }
 
 pub fn draw_link(scene: &mut Scene, route: &Route, l: &LinkDraw, m: &Measured) {
@@ -243,7 +246,7 @@ pub fn draw_link(scene: &mut Scene, route: &Route, l: &LinkDraw, m: &Measured) {
     }
     let width = a.width.unwrap_or(1.0);
     let color = a.color.as_deref().unwrap_or(l.color);
-    let stroke = if a.dashed { dashed(color, width, &LINK_DASH) } else { solid(color, width) };
+    let stroke = if a.dashed { dashed(color, width, &l.shapes.link_dash) } else { solid(color, width) };
     let (tail, head) = (deco_head(a.tail), deco_head(a.head));
 
     let segs = &route.segs;
@@ -281,7 +284,15 @@ pub fn draw_link(scene: &mut Scene, route: &Route, l: &LinkDraw, m: &Measured) {
         let arrow_w = if l.label_dir.is_some() { LABEL_ARROW } else { 0.0 };
         let text_w = m.size(id).0;
         let x = cx - w / 2.0 + arrow_w;
-        m.text_at(scene, id, x + text_w / 2.0 + 1.0, cy - h / 2.0, HAlign::Center);
+        match &l.shapes.label_background {
+            None => m.text_at(scene, id, x + text_w / 2.0 + 1.0, cy - h / 2.0, HAlign::Center),
+            Some(bg) => {
+                let (tw, th) = m.size(id);
+                // Only Mermaid sets a label background, and it centers multi-line labels.
+                let tb = m.textbox(id, x + 1.0, cy - h / 2.0, tw, th, HAlign::Center, VAlign::Top);
+                scene.push_text(tb.background(bg.clone()));
+            }
+        }
         if let Some(forward) = l.label_dir {
             let (_, dir) = along(&pts, length(&pts) / 2.0);
             let dir = if forward { dir } else { (-dir.0, -dir.1) };
@@ -346,7 +357,7 @@ pub fn note_size(m: &Measured, id: LabelId) -> (f32, f32) {
 pub fn draw_note(scene: &mut Scene, m: &Measured, id: LabelId, r: &Rect, fill: Option<Paint>, skin: &Skin) {
     let fill = fill.unwrap_or_else(|| skin.fill(&["note"], skin::NOTE_FILL));
     let border = skin.border(&["note"], skin::BORDER);
-    note_shape(scene, NoteKind::Note, r.x, r.y, r.w, r.h, fill, &border, 1.0);
+    note_shape(scene, skin.style.note_kind, r.x, r.y, r.w, r.h, fill, &border, 1.0);
     m.text_at(scene, id, r.x + NOTE_PAD.0, r.y + NOTE_PAD.1, HAlign::Left);
 }
 

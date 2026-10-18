@@ -97,7 +97,7 @@ pub fn layout_info(model: &Model, skin: &Skin, m: &Measured) -> Result<(Body, Gr
         }
     }
     let edge_of_link = gdraw::build_edges(&mut g, &slots, &model.links, m, false);
-    let opts = graph_opts(skin, model.lr);
+    let opts = graph_opts(skin, model.lr, model.reverse);
     let lay = graph::layout(&g, &opts)?;
 
     let fill_of = |look: &crate::plantuml::diagrams::gcommon::Look| look.fill.clone().unwrap_or_else(|| skin.fill(&["state"], skin::ACTIVITY_FILL));

@@ -143,6 +143,10 @@ pub enum Event {
     GroupStart { tab: LabelId, cond: Option<LabelId> },
     GroupElse(Option<LabelId>),
     GroupEnd,
+    /// Mermaid's `rect`: a filled background region without a frame, closed by
+    /// `HighlightEnd`. It nests with groups; PlantUML never emits it.
+    Highlight(Paint),
+    HighlightEnd,
     /// Activation changes that do not directly follow a message.
     Effect(Effect),
 }

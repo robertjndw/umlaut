@@ -27,6 +27,8 @@ pub enum Head {
     None,
     /// Solid triangle with a notch, PlantUML's default `->`.
     Filled,
+    /// Solid triangle without a notch, as long and wide as `Filled`.
+    Point,
     /// Smaller solid head used on flow arrows (activity diagrams).
     Flow,
     /// Two strokes, `->>`.
@@ -71,6 +73,7 @@ fn unit(from: (f32, f32), to: (f32, f32)) -> (f32, f32) {
 pub fn head_inset(head: Head) -> f32 {
     match head {
         Head::Filled => HEAD_NOTCH,
+        Head::Point => HEAD_LEN,
         Head::Flow => 7.0,
         Head::Cross => 4.0,
         Head::Circle => 8.0,
@@ -94,6 +97,7 @@ pub fn arrowhead(scene: &mut Scene, tip: (f32, f32), dir: (f32, f32), head: Head
     match head {
         Head::None => {}
         Head::Filled => scene.push_polygon(&[tip, at(HEAD_LEN, -HEAD_HALF), at(HEAD_NOTCH, 0.0), at(HEAD_LEN, HEAD_HALF)], fill),
+        Head::Point => scene.push_polygon(&[tip, at(HEAD_LEN, -HEAD_HALF), at(HEAD_LEN, HEAD_HALF)], fill),
         Head::HalfLower | Head::HalfUpper => {
             // "Lower" and "upper" are screen-relative whichever way the arrow points.
             let want = if head == Head::HalfLower { 1.0 } else { -1.0 };
@@ -303,5 +307,18 @@ mod tests {
         let crate::scene::Item::Shape(line) = &s.items[0] else { panic!() };
         assert_eq!(line.bbox[2], 44.0);
         assert_eq!(s.items.len(), 2);
+    }
+
+    #[test]
+    fn point_head_is_a_plain_triangle() {
+        let mut s = Scene::new(10.0, 10.0);
+        arrow(&mut s, &[(0.0, 0.0), (50.0, 0.0)], Head::None, Head::Point, solid("#000000ff", 1.0));
+        // The shaft ends where the triangle's base starts, which has no notch to hide in.
+        let crate::scene::Item::Shape(line) = &s.items[0] else { panic!() };
+        assert_eq!(line.bbox[2], 40.0);
+        let crate::scene::Item::Shape(tri) = &s.items[1] else { panic!() };
+        assert_eq!(tri.bbox[0], 40.0);
+        assert_eq!(tri.bbox[2], 10.0);
+        assert_eq!(tri.bbox[3], 2.0 * HEAD_HALF);
     }
 }

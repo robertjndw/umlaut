@@ -55,6 +55,25 @@
 // Packs measured sizes as f32 pairs; see `plantuml_layout` in plugin/src/lib.rs.
 #let _pack-sizes(sizes) = bytes(sizes.map(s => array(_f32(s.at(0)) + _f32(s.at(1)))).flatten())
 
+// The labels/layout round trip shared by the text diagram formats: the plugin lists
+// the labels, Typst measures them in the final font, and the plugin lays out with those
+// sizes. The arguments are already validated.
+#let _two-pass(labels-fn, layout-fn, payload, width, height, scale, font, warn) = {
+  let labels = cbor(labels-fn(payload))
+  context {
+    let fonts = render.doc-fonts()
+    // Measured at scale 1: the layout works in unscaled pt and the whole result is
+    // scaled afterwards.
+    let sizes = labels.map(l => {
+      let body = render.runs-content(l.runs, font: font, doc-fonts: fonts)
+      let m = if l.wrap_width == none { measure(body) } else { measure(block(width: l.wrap_width * 1pt, body)) }
+      (m.width / 1pt, m.height / 1pt)
+    })
+    let scene = cbor(layout-fn(payload, _pack-sizes(sizes)))
+    render.diagram(scene, width: width, height: height, scale: scale, font: font, warn: warn)
+  }
+}
+
 /// Draws a PlantUML diagram with native Typst elements.
 ///
 /// The plugin lays the diagram out, using the real size of every label in the font
@@ -86,19 +105,7 @@
   let font = validate.font(font)
   let warn = validate.warn(warn)
 
-  let labels = cbor(_plugin.plantuml_labels(payload))
-  context {
-    let fonts = render.doc-fonts()
-    // Measured at scale 1: the layout works in unscaled pt and the whole result is
-    // scaled afterwards.
-    let sizes = labels.map(l => {
-      let body = render.runs-content(l.runs, font: font, doc-fonts: fonts)
-      let m = if l.wrap_width == none { measure(body) } else { measure(block(width: l.wrap_width * 1pt, body)) }
-      (m.width / 1pt, m.height / 1pt)
-    })
-    let scene = cbor(_plugin.plantuml_layout(payload, _pack-sizes(sizes)))
-    render.diagram(scene, width: width, height: height, scale: scale, font: font, warn: warn)
-  }
+  _two-pass(_plugin.plantuml_labels, _plugin.plantuml_layout, payload, width, height, scale, font, warn)
 }
 
 // Renders the plugin's hand-written fixture scene; used by the tests.

@@ -139,6 +139,8 @@ pub struct Model {
     pub ents: Vec<Ent>,
     pub links: Vec<Link>,
     pub lr: bool,
+    /// Ranks run bottom to top or right to left (Mermaid `direction BT|RL`).
+    pub reverse: bool,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -197,7 +199,7 @@ pub fn parse(lines: &[Line], ctx: &mut Ctx) -> Result<Model, String> {
         return err(lines.first().map_or(1, |l| l.no), "the class diagram is empty");
     }
     p.apply_rules();
-    Ok(Model { ents: p.ents, links: p.links, lr: p.lr })
+    Ok(Model { ents: p.ents, links: p.links, lr: p.lr, reverse: false })
 }
 
 /// Position of `pat` that is not inside `<...>`, so `Foo<T extends Bar>` is not an `extends`.

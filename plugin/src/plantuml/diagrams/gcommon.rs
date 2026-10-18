@@ -36,6 +36,10 @@ pub enum Deco {
     Lollipop,
     /// `)`: required interface.
     Socket,
+    /// A ring at the end; Mermaid's `--o`.
+    Circle,
+    /// A plain filled triangle; Mermaid's `-->`.
+    Point,
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -93,6 +93,10 @@ pub enum Border {
     /// A figure of this width and height at the top of a box with the label below it (an
     /// actor, an interface circle). Dot only knows the box.
     Icon(u16, u16),
+    /// A box whose left and right sides lean (hexagon, parallelogram, trapezoid) by this
+    /// many pt. Dot and clipping only know the box; the lean keeps line ends off the
+    /// corners where the outline has already pulled away from the box.
+    Slanted(u16),
 }
 
 /// How an edge wants its ends placed. `Auto(len)` is the number of dashes of the arrow:
@@ -165,6 +169,8 @@ pub struct Graph {
 pub struct Opts {
     /// `left to right direction`.
     pub lr: bool,
+    /// Ranks run bottom to top (or right to left with `lr`) instead of the other way.
+    pub reverse: bool,
     pub style: Style,
     /// Gap between neighbors in a rank.
     pub node_sep: f32,
@@ -174,7 +180,7 @@ pub struct Opts {
 
 impl Default for Opts {
     fn default() -> Opts {
-        Opts { lr: false, style: Style::Spline, node_sep: 35.0, rank_sep: 60.0 }
+        Opts { lr: false, reverse: false, style: Style::Spline, node_sep: 35.0, rank_sep: 60.0 }
     }
 }
 
@@ -286,7 +292,7 @@ pub fn clip(r: &Rect, border: Border, toward: Pt) -> Pt {
         }
     }
     let t = match border {
-        Border::Rect | Border::Icon(..) => {
+        Border::Rect | Border::Icon(..) | Border::Slanted(_) => {
             let tx = if dx.abs() < 1e-6 { f32::MAX } else { hw / dx.abs() };
             let ty = if dy.abs() < 1e-6 { f32::MAX } else { hh / dy.abs() };
             tx.min(ty)
@@ -550,7 +556,7 @@ fn node_attrs(n: &DotNode) -> String {
     let shape = match n.border {
         Border::Ellipse => "ellipse",
         Border::Diamond => "diamond",
-        Border::Rect | Border::Icon(..) => "box",
+        Border::Rect | Border::Icon(..) | Border::Slanted(_) => "box",
     };
     let style = if n.origin == Origin::Phantom { " style=invis" } else { "" };
     format!("[shape={shape} width={} height={}{style}]", inches(n.w.max(1.0)), inches(n.h.max(1.0)))
@@ -593,7 +599,12 @@ fn dot_text(dg: &DotGraph, clusters: &[Cluster], o: &Opts, compound: bool) -> St
     let mut out = String::from("digraph G {\n");
     out.push_str(&format!(
         "  graph [rankdir={} nodesep={} ranksep={} splines={splines} compound={compound} remincross=true]\n",
-        if o.lr { "LR" } else { "TB" },
+        match (o.lr, o.reverse) {
+            (false, false) => "TB",
+            (false, true) => "BT",
+            (true, false) => "LR",
+            (true, true) => "RL",
+        },
         inches(o.node_sep),
         inches(o.rank_sep)
     ));
@@ -887,8 +898,9 @@ impl<'a> Solver<'a> {
             let cb = cb.filter(|&k| !dg.node_within(a, k));
             let (len, flipped, horizontal) = match e.hint {
                 Hint::Auto(n) => (n.max(1), false, n <= 1),
-                Hint::Dir(Dir::Down) => (2, false, false),
-                Hint::Dir(Dir::Up) => (2, true, false),
+                // Dot's ranks run the other way when reversed, so the screen directions swap.
+                Hint::Dir(Dir::Down) => (2, self.o.reverse, false),
+                Hint::Dir(Dir::Up) => (2, !self.o.reverse, false),
                 Hint::Dir(Dir::Right) => (1, false, true),
                 Hint::Dir(Dir::Left) => (1, true, true),
             };
@@ -1021,12 +1033,22 @@ fn set_route_end(r: &mut Route, start: bool, p: Pt, c: Option<Pt>) {
     }
 }
 
+/// How far from a corner a line end is kept at the least.
+const CORNER: f32 = 8.0;
+
+/// Distance a line end keeps from a node's corners; slanted outlines need more.
+fn corner_of(b: Border) -> f32 {
+    match b {
+        Border::Slanted(k) => (k as f32).max(CORNER),
+        _ => CORNER,
+    }
+}
+
 /// Dot ends a spline wherever it happens to cross the node's outline, which for a line
 /// sliding along the bottom of a box is its corner, on top of the other lines that
 /// leave from there. Such ends are moved onto the side of the box that faces the other
 /// end and spread along it; icons get their ends on the figure instead of the box.
 fn settle_ends(out: &mut [Route], g: &Graph, nodes: &[Rect], lifts: &[Lift]) {
-    const CORNER: f32 = 8.0;
     const SPACING: f32 = 14.0;
     // (route, start?, node, side, wanted position along the side)
     let mut moves: Vec<(usize, bool, usize, Side, f32, bool)> = Vec::new();
@@ -1044,18 +1066,19 @@ fn settle_ends(out: &mut [Route], g: &Graph, nodes: &[Rect], lifts: &[Lift]) {
                     let q = clip(&r, g.nodes[n].border, c);
                     set_route_end(&mut out[i], start, q, None);
                 }
-                Border::Rect if !lifted => {
+                Border::Rect | Border::Slanted(_) if !lifted => {
+                    let corner = corner_of(g.nodes[n].border);
                     let side = Side::meeting(&r, p, c);
                     let (lo, hi, at, line, across) = if side.horizontal() { (r.x, r.right(), p.0, if side == Side::Top { r.y } else { r.bottom() }, p.1) } else { (r.y, r.bottom(), p.1, if side == Side::Left { r.x } else { r.right() }, p.0) };
                     let n_out = side.outward();
                     let away = unit_vec(p, c);
                     let cos = (away.0 * n_out.0 + away.1 * n_out.1).abs();
-                    let settled = (across - line).abs() < 1.5 && at > lo + CORNER && at < hi - CORNER && cos > 0.25;
+                    let settled = (across - line).abs() < 1.5 && at > lo + corner && at < hi - corner && cos > 0.25;
                     if settled {
                         occupied.entry((n, side)).or_default().push(at);
                     } else {
                         // The nearest spot on the side keeps the rest of the curve as dot drew it.
-                        moves.push((i, start, n, side, at.clamp(lo + CORNER, (hi - CORNER).max(lo + CORNER)), cos > 0.25));
+                        moves.push((i, start, n, side, at.clamp(lo + corner, (hi - corner).max(lo + corner)), cos > 0.25));
                     }
                 }
                 _ => {}
@@ -1065,7 +1088,8 @@ fn settle_ends(out: &mut [Route], g: &Graph, nodes: &[Rect], lifts: &[Lift]) {
     moves.sort_by(|a, b| (a.2, a.3).cmp(&(b.2, b.3)).then(a.4.total_cmp(&b.4)));
     for (i, start, n, side, want, steep) in moves {
         let r = nodes[n];
-        let (lo, hi) = if side.horizontal() { (r.x + CORNER, r.right() - CORNER) } else { (r.y + CORNER, r.bottom() - CORNER) };
+        let corner = corner_of(g.nodes[n].border);
+        let (lo, hi) = if side.horizontal() { (r.x + corner, r.right() - corner) } else { (r.y + corner, r.bottom() - corner) };
         let used = occupied.entry((n, side)).or_default();
         let free = |x: f32| used.iter().all(|u| (u - x).abs() >= SPACING);
         let at = (0..8)
@@ -1231,4 +1255,75 @@ pub fn layout(g: &Graph, o: &Opts) -> Result<Layout, String> {
         }
     }
     Ok(Layout { nodes, clusters, routes: out, w, h, obstacles, polys })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chain() -> Graph {
+        let node = Node { w: 60.0, h: 30.0, parent: None, border: Border::Rect };
+        let edge = Edge { from: End::Node(0), to: End::Node(1), hint: Hint::Auto(2), label: None, tail_label: None, head_label: None };
+        Graph { nodes: vec![node.clone(), node], clusters: vec![], edges: vec![edge] }
+    }
+
+    #[test]
+    fn dot_gets_the_rank_direction() {
+        let dg = DotGraph::default();
+        for (lr, reverse, want) in [(false, false, "TB"), (false, true, "BT"), (true, false, "LR"), (true, true, "RL")] {
+            let text = dot_text(&dg, &[], &Opts { lr, reverse, ..Opts::default() }, false);
+            assert!(text.contains(&format!("rankdir={want} ")), "{text}");
+        }
+    }
+
+    #[test]
+    fn reverse_puts_the_head_before_the_tail() {
+        let g = chain();
+        let at = |lr, reverse| {
+            let l = layout(&g, &Opts { lr, reverse, ..Opts::default() }).unwrap();
+            (l.nodes[0].center(), l.nodes[1].center())
+        };
+        let (a, b) = at(false, false);
+        assert!(b.1 > a.1, "{a:?} {b:?}");
+        let (a, b) = at(false, true);
+        assert!(b.1 < a.1, "{a:?} {b:?}");
+        let (a, b) = at(true, false);
+        assert!(b.0 > a.0, "{a:?} {b:?}");
+        let (a, b) = at(true, true);
+        assert!(b.0 < a.0, "{a:?} {b:?}");
+    }
+
+    #[test]
+    fn directed_hints_keep_their_screen_direction_when_reversed() {
+        let mut g = chain();
+        g.edges[0].hint = Hint::Dir(Dir::Down);
+        let l = layout(&g, &Opts { reverse: true, ..Opts::default() }).unwrap();
+        assert!(l.nodes[1].center().1 > l.nodes[0].center().1);
+    }
+
+    #[test]
+    fn slanted_nodes_keep_line_ends_off_the_leaning_corners() {
+        let end_x = |border| {
+            let g = Graph {
+                nodes: vec![Node { w: 100.0, h: 40.0, parent: None, border }, Node { w: 100.0, h: 40.0, parent: None, border: Border::Rect }],
+                clusters: vec![],
+                edges: vec![Edge { from: End::Node(1), to: End::Node(0), hint: Hint::Auto(2), label: None, tail_label: None, head_label: None }],
+            };
+            let nodes = [Rect::new(0.0, 0.0, 100.0, 40.0), Rect::new(0.0, 140.0, 100.0, 40.0)];
+            let lifts = [Lift { scope: 0, from: End::Node(1), to: End::Node(0), across: false }];
+            // Arrives at the bottom side, 3 pt from its left corner.
+            let mut routes = vec![Route::line((50.0, 140.0), (3.0, 40.0))];
+            settle_ends(&mut routes, &g, &nodes, &lifts);
+            routes[0].end().0
+        };
+        assert_eq!(end_x(Border::Rect), CORNER);
+        assert_eq!(end_x(Border::Slanted(30)), 30.0);
+        assert_eq!(end_x(Border::Slanted(2)), CORNER);
+    }
+
+    #[test]
+    fn slanted_nodes_are_clipped_like_boxes() {
+        let r = Rect::new(0.0, 0.0, 100.0, 40.0);
+        assert_eq!(clip(&r, Border::Slanted(12), (50.0, 200.0)), clip(&r, Border::Rect, (50.0, 200.0)));
+    }
 }

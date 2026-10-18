@@ -96,10 +96,16 @@ impl Measured {
     /// Draws the label at its measured size. `x` is the left edge, the center or the
     /// right edge depending on `anchor`; `y` is the top.
     pub fn text_at(&self, scene: &mut Scene, id: LabelId, x: f32, y: f32, anchor: HAlign) {
+        self.text_lines_at(scene, id, x, y, anchor, HAlign::Left);
+    }
+
+    /// Like `text_at`, with the lines of a multi-line label aligned by `lines` within the
+    /// label's own width (Mermaid centers every line, PlantUML starts them at the left).
+    pub fn text_lines_at(&self, scene: &mut Scene, id: LabelId, x: f32, y: f32, anchor: HAlign, lines: HAlign) {
         let (w, h) = self.size(id);
         let w = if self.labels[id.0].wrap_width.is_some() { w } else { w + EPS };
         let left = anchor_left(anchor, x, w);
-        scene.push_text(self.textbox(id, left, y, w, h, HAlign::Left, VAlign::Top));
+        scene.push_text(self.textbox(id, left, y, w, h, lines, VAlign::Top));
     }
 }
 
