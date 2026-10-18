@@ -104,7 +104,7 @@ pub fn skin() -> Skin {
     // specialStateColor, the start dot and the end ring.
     set("stateStartColor", LINE);
 
-    let st = &mut s.style;
+    let st = &mut s.shapes;
     // Mermaid draws solid, thin lifelines and a flat rectangle for notes.
     st.lifeline_dash = None;
     st.lifeline_width = 0.5;
@@ -183,8 +183,8 @@ mod tests {
         assert_eq!(s.border(&["package"], ps::BORDER), "#aaaa33ff");
         assert_eq!(s.num(&["nodesep"], 0.0), 50.0);
         assert_eq!(s.fill(&["sequenceactivation", "sequencelifeline"], "#000000").color, "#f4f4f4ff");
-        assert!(s.style.lifeline_dash.is_none());
-        assert_eq!(s.style.note_kind, NoteKind::Rect);
+        assert!(s.shapes.lifeline_dash.is_none());
+        assert_eq!(s.shapes.note_kind, NoteKind::Rect);
     }
 
     #[test]

@@ -13,6 +13,7 @@ pub use parse::parse;
 
 use crate::mermaid::css::Css;
 use crate::plantuml::diagrams::gcommon::{Ent, Link};
+use crate::plantuml::layout::graph::RankDir;
 use crate::plantuml::model::LabelId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,8 +73,7 @@ pub enum Def {
 pub struct Model {
     pub ents: Vec<Ent<Def>>,
     pub links: Vec<Link>,
-    pub lr: bool,
-    pub reverse: bool,
+    pub dir: RankDir,
 }
 
 #[cfg(test)]
@@ -117,11 +117,9 @@ mod tests {
 
     #[test]
     fn direction_comes_from_the_header() {
-        assert_eq!((model("flowchart TD\nA-->B").lr, model("flowchart TD\nA-->B").reverse), (false, false));
-        let m = model("graph RL\nA-->B");
-        assert!(m.lr && m.reverse);
-        let m = model("flowchart BT\nA-->B");
-        assert!(!m.lr && m.reverse);
+        assert_eq!(model("flowchart TD\nA-->B").dir, RankDir::TB);
+        assert_eq!(model("graph RL\nA-->B").dir, RankDir::RL);
+        assert_eq!(model("flowchart BT\nA-->B").dir, RankDir::BT);
         assert!(model("flowchart\nA-->B").links.len() == 1);
     }
 
@@ -391,15 +389,6 @@ mod tests {
         let meas = Measured::new(ctx.reg.labels.clone(), sizes(&ctx.reg.labels));
         let (body, info) = layout_info(&m, &ctx.skin, &meas).unwrap();
         (m, info, body.scene.warnings)
-    }
-
-    #[test]
-    fn every_fixture_renders_and_matches_its_label_count() {
-        for (name, src) in fixtures("mermaid", "mmd", "flow_") {
-            let l = labels(src.as_bytes()).unwrap_or_else(|e| panic!("{name}: {e}"));
-            let scene = mlayout(src.as_bytes(), &sizes(&l)).unwrap_or_else(|e| panic!("{name}: {e}"));
-            assert!(scene.size[0] > 0.0 && scene.size[1] > 0.0, "{name}");
-        }
     }
 
     #[test]

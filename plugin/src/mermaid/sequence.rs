@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use super::lexer::Header;
 use super::{set_title, text, theme};
 use crate::color::parse_css;
+use crate::plantuml::creole::Base;
 use crate::plantuml::diagrams::sequence::{
     Arrow, BoxDecl, Effect, EffectKind, Endpoint, Event, Message, Model as PModel, Note, NotePlace, PKind, Participant,
 };
@@ -105,9 +106,16 @@ struct Parser<'a> {
     title: Option<String>,
     pending_create: Option<(usize, usize)>,
     pending_destroy: Vec<(usize, usize)>,
+    /// An init directive asked for `wrap: true`.
+    wrap: bool,
+    message_base: Base,
+    note_base: Base,
+    group_base: Base,
 }
 
 pub fn parse(lines: &[Line], header: &Header, ctx: &mut Ctx) -> Result<Model, String> {
+    let (message_base, note_base) = (theme::message(&ctx.skin), theme::note(&ctx.skin));
+    let group_base = ctx.skin.text(&["sequencegroup", "sequencegroupheader"], theme::FONT_SIZE, theme::ACTOR_TEXT);
     let mut p = Parser {
         ctx,
         decls: Vec::new(),
@@ -120,6 +128,10 @@ pub fn parse(lines: &[Line], header: &Header, ctx: &mut Ctx) -> Result<Model, St
         title: None,
         pending_create: None,
         pending_destroy: Vec::new(),
+        wrap: header.wrap,
+        message_base,
+        note_base,
+        group_base,
     };
     for l in lines {
         if !l.text.is_empty() {
@@ -152,20 +164,6 @@ fn find_arrow(s: &str) -> Option<(usize, &'static ArrowTok)> {
     s.char_indices().find_map(|(i, _)| ARROWS.iter().find(|a| s[i..].starts_with(a.0)).map(|a| (i, a)))
 }
 
-fn pkind(word: &str) -> Option<PKind> {
-    Some(match word {
-        "participant" => PKind::Participant,
-        "actor" => PKind::Actor,
-        "boundary" => PKind::Boundary,
-        "control" => PKind::Control,
-        "entity" => PKind::Entity,
-        "database" => PKind::Database,
-        "collections" => PKind::Collections,
-        "queue" => PKind::Queue,
-        _ => return None,
-    })
-}
-
 /// Value of `key` in the loose JSON of `@{ "type": "database", alias: "x" }`.
 fn json_field(body: &str, key: &str) -> Option<String> {
     let mut from = 0;
@@ -196,14 +194,6 @@ impl Parser<'_> {
         self.decls.len() - 1
     }
 
-    fn wrap_default(&self) -> bool {
-        self.ctx.skin.flag("wrap") == Some(true)
-    }
-
-    fn group_base(&self) -> crate::plantuml::creole::Base {
-        self.ctx.skin.text(&["sequencegroup", "sequencegroupheader"], theme::FONT_SIZE, theme::ACTOR_TEXT)
-    }
-
     /// Message text with its `wrap:` / `nowrap:` marker removed, and whether to wrap.
     fn wrap_marker<'t>(&self, t: &'t str) -> (&'t str, bool) {
         for (prefix, wrap) in [("wrap:", true), ("nowrap:", false)] {
@@ -211,14 +201,15 @@ impl Parser<'_> {
                 return (t[prefix.len()..].trim_start(), wrap);
             }
         }
-        (t, self.wrap_default())
+        (t, self.wrap)
     }
 
-    fn number_runs(&mut self, base: &crate::plantuml::creole::Base) -> Vec<Run> {
+    fn number_runs(&mut self) -> Vec<Run> {
         let Some(a) = self.auto.as_mut() else { return vec![] };
         let n = a.next;
         a.next += a.step;
         let shown = if n.fract() == 0.0 { format!("{}", n as i64) } else { format!("{n:.2}").trim_end_matches('0').to_string() };
+        let base = &self.message_base;
         let mut runs = text::plain_runs(&shown, &base.clone().bold());
         runs.push(Run::new(" ").size(base.size));
         runs
@@ -229,7 +220,7 @@ impl Parser<'_> {
         let lower = first_word(t).to_ascii_lowercase();
         let word = lower.trim_end_matches(':');
         let rest = rest_after_word(t);
-        if let Some(kind) = pkind(word) {
+        if let Some(kind) = PKind::from_word(word) {
             return self.declare(l, kind, rest, false);
         }
         match word {
@@ -275,7 +266,7 @@ impl Parser<'_> {
             let Some(end) = cfg.find('}') else { return err(l.no, "unterminated `@{` in the participant declaration") };
             let body = &cfg[..end];
             if let Some(ty) = json_field(body, "type") {
-                kind = match pkind(&ty.to_ascii_lowercase()) {
+                kind = match PKind::from_word(&ty.to_ascii_lowercase()) {
                     Some(k) => k,
                     None => return err(l.no, format!("unknown participant type \"{ty}\"")),
                 };
@@ -300,7 +291,7 @@ impl Parser<'_> {
     }
 
     fn create(&mut self, l: &Line, rest: &str) -> Result<(), String> {
-        match pkind(&first_word(rest).to_ascii_lowercase()) {
+        match PKind::from_word(&first_word(rest).to_ascii_lowercase()) {
             Some(kind) => self.declare(l, kind, rest_after_word(rest), true),
             None => err(l.no, "`create` needs `participant` or `actor` and a name"),
         }
@@ -354,13 +345,13 @@ impl Parser<'_> {
         if t.is_empty() {
             return None;
         }
-        let runs = text::runs(&format!("[{t}]"), &self.group_base());
+        let runs = text::runs(&format!("[{t}]"), &self.group_base);
         self.ctx.reg.add_opt(runs, None)
     }
 
     fn open(&mut self, l: &Line, block: Block, rest: &str) -> Result<(), String> {
         check_nesting(self.stack.len(), l.no)?;
-        let tab = self.ctx.reg.add(text::runs(block.keyword(), &self.group_base()), None);
+        let tab = self.ctx.reg.add(text::runs(block.keyword(), &self.group_base), None);
         let cond = self.cond(rest);
         self.events.push(Event::GroupStart { tab, cond });
         self.stack.push((block, l.no));
@@ -400,7 +391,7 @@ impl Parser<'_> {
             fill = Some(Paint::solid(&c));
             name = rest[first_end..].trim();
         }
-        let label = if name.is_empty() { None } else { self.ctx.reg.add_opt(text::runs(name, &self.group_base()), None) };
+        let label = if name.is_empty() { None } else { self.ctx.reg.add_opt(text::runs(name, &self.group_base), None) };
         self.boxes.push(BoxDecl { label, fill });
         self.open_box = Some(self.boxes.len() - 1);
         self.stack.push((Block::Box, l.no));
@@ -411,7 +402,6 @@ impl Parser<'_> {
         match self.stack.pop() {
             None => return err(l.no, "`end` without a block to close"),
             Some((Block::Box, _)) => self.open_box = None,
-            Some((Block::Rect, _)) => self.events.push(Event::HighlightEnd),
             Some(_) => self.events.push(Event::GroupEnd),
         }
         Ok(())
@@ -443,7 +433,7 @@ impl Parser<'_> {
         };
         let Some(body) = body else { return err(l.no, "the note needs text after a `:`") };
         let (body, wrap) = self.wrap_marker(body);
-        let runs = text::runs(body, &theme::note(&self.ctx.skin));
+        let runs = text::runs(body, &self.note_base);
         let Some(label) = self.ctx.reg.add_opt(runs, wrap.then_some(NOTE_WRAP)) else { return err(l.no, "the note is empty") };
         self.events.push(Event::Note(Note { kind: NoteKind::Rect, place, fill: None, label }));
         Ok(())
@@ -495,9 +485,8 @@ impl Parser<'_> {
         }
 
         let (body, wrap) = self.wrap_marker(label_text.unwrap_or(""));
-        let base = theme::message(&self.ctx.skin);
-        let mut runs = self.number_runs(&base);
-        runs.extend(text::runs(body, &base));
+        let mut runs = self.number_runs();
+        runs.extend(text::runs(body, &self.message_base));
         let label = self.ctx.reg.add_opt(runs, wrap.then_some(MESSAGE_WRAP));
         self.events.push(Event::Message(Message {
             from: Endpoint::Part(from),
@@ -531,14 +520,10 @@ impl Parser<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mermaid::{self, lexer};
+    use crate::mermaid;
 
     fn model(src: &str) -> Result<(Model, Ctx), String> {
-        let lexer::Source { header, lines, wrap, .. } = lexer::lex(src.as_bytes())?;
-        let mut ctx = Ctx { skin: theme::skin(), reg: Default::default(), meta: Default::default(), warnings: Vec::new() };
-        if wrap {
-            ctx.skin.set("wrap", "true");
-        }
+        let mermaid::Front { header, lines, mut ctx } = mermaid::front(src.as_bytes())?;
         let m = parse(&lines, &header, &mut ctx)?;
         Ok((m, ctx))
     }
@@ -632,7 +617,7 @@ mod tests {
     fn rect_makes_highlight_events_that_nest_with_groups() {
         let (m, _) = model("sequenceDiagram\nrect rgba(0, 0, 255, .1)\nloop x\nA->>B: m\nend\nend").unwrap();
         assert!(matches!(&m.events[0], Event::Highlight(p) if p.color == "#0000ff1a"));
-        assert!(matches!(m.events.last(), Some(Event::HighlightEnd)));
+        assert!(matches!(m.events.last(), Some(Event::GroupEnd)));
         assert!(matches!(m.events[1], Event::GroupStart { .. }));
     }
 
@@ -705,16 +690,6 @@ mod tests {
         let runs = &c.reg.labels[msgs(&m)[0].label.unwrap().0].runs;
         assert!(runs.iter().any(|r| r.br));
         assert!(runs.iter().any(|r| r.text.contains('\u{2665}')));
-    }
-
-    #[test]
-    fn fixtures_render_deterministically_with_valid_geometry() {
-        for (name, src) in crate::test_util::fixtures("mermaid", "mmd", "seq_") {
-            let render = || crate::test_util::render_with(mermaid::labels, mermaid::layout, &src).unwrap_or_else(|e| panic!("{name}: {e}"));
-            let (a, b) = (render(), render());
-            assert_eq!(format!("{a:?}"), format!("{b:?}"), "{name} is not deterministic");
-            assert!(a.size[0] > 0.0 && a.size[1] > 0.0, "{name}");
-        }
     }
 
     #[test]

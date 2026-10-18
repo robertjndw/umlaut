@@ -96,14 +96,13 @@ fn a_title_statement_does_not_replace_the_front_matter_title() {
 fn lexer_warnings_reach_the_context() {
     let f = front(b"%%{init: {}}%%\nflowchart TD").unwrap();
     assert_eq!(f.ctx.warnings, vec!["line 1: %%{init}%% directives are ignored".to_string()]);
-    assert_eq!(f.ctx.skin.flag("wrap"), None);
+    assert!(!f.header.wrap);
     let w = front(b"%%{init: {\"sequence\": {\"wrap\": true}}}%%\nsequenceDiagram").unwrap();
-    assert_eq!(w.ctx.skin.flag("wrap"), Some(true));
+    assert!(w.header.wrap);
 }
 
 #[test]
 fn size_count_mismatch_is_an_error() {
-    assert!(check_sizes(3, 3).is_ok());
-    let e = check_sizes(3, 2).unwrap_err();
-    assert_eq!(e, "the plugin expected 3 label sizes but got 2; the source changed between the two passes");
+    let e = layout(b"flowchart LR\nA-->B", &[(1.0, 1.0); 3]).unwrap_err();
+    assert_eq!(e, "the plugin expected 2 label sizes but got 3; the source changed between the two passes");
 }

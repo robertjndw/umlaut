@@ -14,10 +14,20 @@ pub fn dashed(color: &str, width: f32, dash: &[f32]) -> Stroke {
     solid(color, width).dash(dash.to_vec())
 }
 
+/// `dashed` with the pattern when there is one, `solid` otherwise.
+pub fn dashed_or_solid(color: &str, width: f32, dash: Option<&[f32]>) -> Stroke {
+    match dash {
+        Some(d) => dashed(color, width, d),
+        None => solid(color, width),
+    }
+}
+
 /// Dash pattern of dashed message and flow arrows.
 pub const ARROW_DASH: [f32; 2] = [4.0, 4.0];
 /// Dash pattern of lifelines.
 pub const LIFELINE_DASH: [f32; 2] = [5.0, 5.0];
+/// Dash pattern of dashed links and box outlines in graph diagrams.
+pub const LINK_DASH: [f32; 2] = [7.0, 5.0];
 /// Dotted pattern for the stretch of a lifeline inside a delay.
 pub const DOTTED: [f32; 2] = [1.5, 3.0];
 

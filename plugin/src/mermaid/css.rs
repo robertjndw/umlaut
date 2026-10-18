@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use crate::color::parse_css;
+use crate::plantuml::creole::Base;
 use crate::plantuml::diagrams::gcommon::Look;
 use crate::scene::Paint;
 
@@ -112,6 +113,17 @@ impl Css {
             bold: self.stroke_width.is_some_and(|w| w >= 2.0),
         }
     }
+
+    /// `base` with this style's text color, bold and italic on top.
+    pub fn text(&self, base: &Base) -> Base {
+        let mut b = base.clone();
+        if let Some(c) = &self.color {
+            b.color.clone_from(c);
+        }
+        b.bold |= self.bold;
+        b.italic |= self.italic;
+        b
+    }
 }
 
 /// The `classDef`s of a diagram. `default` applies to every node before its own classes.
@@ -134,6 +146,20 @@ impl Classes {
     /// `default`, then each class in order, then the element's own `style`.
     pub fn resolve(&self, classes: &[String], own: Option<&Css>) -> Css {
         let mut css = self.defs.get("default").cloned().unwrap_or_default();
+        self.merge_into(&mut css, classes, own);
+        css
+    }
+
+    /// Like `resolve` with `default` left out, even when it is assigned by name: Mermaid
+    /// only applies it to flowchart nodes, not to subgraphs.
+    pub fn resolve_without_default(&self, classes: &[String], own: Option<&Css>) -> Css {
+        let mut css = Css::default();
+        let named: Vec<String> = classes.iter().filter(|c| *c != "default").cloned().collect();
+        self.merge_into(&mut css, &named, own);
+        css
+    }
+
+    fn merge_into(&self, css: &mut Css, classes: &[String], own: Option<&Css>) {
         for c in classes {
             if let Some(d) = self.defs.get(c) {
                 css.merge(d);
@@ -142,7 +168,48 @@ impl Classes {
         if let Some(o) = own {
             css.merge(o);
         }
-        css
+    }
+}
+
+/// The `classDef`, `class`/`cssClass` and `style` statements of a class or state
+/// diagram, collected by element key so they can come before or after the element.
+#[derive(Debug, Default)]
+pub struct Styles {
+    classes: Classes,
+    assigned: HashMap<String, Vec<String>>,
+    own: HashMap<String, Css>,
+}
+
+impl Styles {
+    /// `classDef a,b fill:...`: the rest after the keyword.
+    pub fn define(&mut self, rest: &str) {
+        self.classes.define(rest);
+    }
+
+    pub fn assign(&mut self, key: &str, classes: &[String]) {
+        if !classes.is_empty() {
+            self.assigned.entry(key.to_string()).or_default().extend(classes.iter().cloned());
+        }
+    }
+
+    /// `class a,b name` or `cssClass "a,b" name`; `None` when the statement is malformed.
+    pub fn assign_statement(&mut self, rest: &str) -> Option<()> {
+        let (ids, names) = parse_assign(rest)?;
+        for id in ids {
+            self.assign(&id, &names);
+        }
+        Some(())
+    }
+
+    /// `style id fill:...`; `None` when the statement is malformed.
+    pub fn style_statement(&mut self, rest: &str) -> Option<()> {
+        let (id, css) = parse_style(rest)?;
+        self.own.entry(id).or_default().merge(&css);
+        Some(())
+    }
+
+    pub fn resolve(&self, key: &str) -> Css {
+        self.classes.resolve(self.assigned.get(key).map_or(&[][..], |v| v), self.own.get(key))
     }
 }
 
@@ -169,6 +236,18 @@ pub fn split_classes(s: &str) -> (&str, Vec<String>) {
     let mut parts = s.split(":::");
     let head = parts.next().unwrap_or("");
     (head, parts.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect())
+}
+
+/// The `:::a:::b` suffixes at the start of `s` and what follows them. Class names hold
+/// letters, digits, `_` and `-`.
+pub fn take_classes(mut s: &str) -> (Vec<String>, &str) {
+    let mut classes = Vec::new();
+    while let Some(r) = s.strip_prefix(":::") {
+        let n = r.find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-')).unwrap_or(r.len());
+        classes.push(r[..n].to_string());
+        s = &r[n..];
+    }
+    (classes, s)
 }
 
 #[cfg(test)]
@@ -212,5 +291,17 @@ mod tests {
         assert_eq!(parse_assign("a,b warn").unwrap(), (vec!["a".to_string(), "b".to_string()], vec!["warn".to_string()]));
         assert_eq!(parse_assign("\"a,b\" warn").unwrap().0, vec!["a".to_string(), "b".to_string()]);
         assert_eq!(split_classes("A[x]:::one:::two"), ("A[x]", vec!["one".to_string(), "two".to_string()]));
+        assert_eq!(take_classes(":::one:::t-2 --> B"), (vec!["one".to_string(), "t-2".to_string()], " --> B"));
+    }
+
+    #[test]
+    fn subgraphs_skip_the_default_class() {
+        let mut cl = Classes::default();
+        cl.define("default,a fill:#eee");
+        cl.define("a stroke:#000");
+        assert_eq!(cl.resolve_without_default(&[], None), Css::default());
+        assert_eq!(cl.resolve_without_default(&["default".into()], None), Css::default());
+        let c = cl.resolve_without_default(&["a".into()], None);
+        assert_eq!((c.fill.as_deref(), c.stroke.as_deref()), (Some("#eeeeeeff"), Some("#000000ff")));
     }
 }

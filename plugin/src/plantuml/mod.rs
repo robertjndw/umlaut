@@ -82,6 +82,10 @@ pub(crate) fn parse_with<M>(src: &str, parse: fn(&[lexer::Line], &mut Ctx) -> Re
 }
 
 fn parse(source: &[u8]) -> Result<Parsed, String> {
+    parse_diagram(source).map_err(|e| mermaid_hint(source, e))
+}
+
+fn parse_diagram(source: &[u8]) -> Result<Parsed, String> {
     let Front { lines, mut ctx, tag, tag_line } = front(source)?;
     // `meta::register` cannot fail, so detecting after it reports the same errors.
     let (kind, line) = detect::detect(&tag, tag_line, &lines)?;
@@ -101,9 +105,9 @@ fn parse(source: &[u8]) -> Result<Parsed, String> {
 /// say nothing about the real mistake, so the error gets a pointer.
 fn mermaid_hint(source: &[u8], e: String) -> String {
     let first = String::from_utf8_lossy(source);
-    let word = first.lines().map(str::trim).find(|l| !l.is_empty()).and_then(|l| l.split(|c: char| c.is_whitespace() || c == ';').next()).unwrap_or("");
-    let mermaid = matches!(word, "flowchart" | "graph" | "sequenceDiagram" | "classDiagram" | "classDiagram-v2" | "stateDiagram" | "stateDiagram-v2");
-    if mermaid {
+    let line = first.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("");
+    let (word, _) = crate::mermaid::lexer::split_word(line);
+    if crate::mermaid::lexer::header_kind(word).is_some() {
         format!("{e} (this looks like Mermaid, use mermaid())")
     } else {
         e
@@ -114,12 +118,27 @@ fn mermaid_hint(source: &[u8], e: String) -> String {
 /// `layout` receives one measured size per label, in this order, so the order must be
 /// a pure function of `source`.
 pub fn labels(source: &[u8]) -> Result<Vec<Label>, String> {
-    Ok(parse(source).map_err(|e| mermaid_hint(source, e))?.ctx.reg.labels)
+    Ok(parse(source)?.ctx.reg.labels)
 }
 
 /// Pass 2: lay out with `sizes[i] = (width, height)` in pt for `labels(source)[i]`.
 pub fn layout(source: &[u8], sizes: &[(f32, f32)]) -> Result<Scene, String> {
-    let Parsed { ctx, diagram } = parse(source).map_err(|e| mermaid_hint(source, e))?;
+    let Parsed { ctx, diagram } = parse(source)?;
+    finish(ctx, sizes, |skin, measured| {
+        Ok(match &diagram {
+            Diagram::Sequence(m) => layout::sequence::layout(m, skin, measured),
+            Diagram::Activity(m) => layout::flow::layout(m, skin, measured),
+            Diagram::Class(m) => layout::class::layout(m, skin, measured)?,
+            Diagram::State(m) => layout::state::layout(m, skin, measured)?,
+            Diagram::Description(m) => layout::description::layout(m, skin, measured)?,
+        })
+    })
+}
+
+/// The end of pass 2 for every front end that parses into a `Ctx`: checks that each
+/// registered label got a size, lays out the body with the measured labels and puts the
+/// page (title, legend, ...) and the parser's warnings around it.
+pub(crate) fn finish(ctx: Ctx, sizes: &[(f32, f32)], body: impl FnOnce(&skin::Skin, &Measured) -> Result<layout::Body, String>) -> Result<Scene, String> {
     if sizes.len() != ctx.reg.labels.len() {
         return Err(format!(
             "the plugin expected {} label sizes but got {}; the source changed between the two passes",
@@ -129,14 +148,7 @@ pub fn layout(source: &[u8], sizes: &[(f32, f32)]) -> Result<Scene, String> {
     }
     let Ctx { skin, reg, meta, warnings } = ctx;
     let measured = Measured::new(reg.labels, sizes.to_vec());
-    let body = match &diagram {
-        Diagram::Sequence(m) => layout::sequence::layout(m, &skin, &measured),
-        Diagram::Activity(m) => layout::flow::layout(m, &skin, &measured),
-        Diagram::Class(m) => layout::class::layout(m, &skin, &measured)?,
-        Diagram::State(m) => layout::state::layout(m, &skin, &measured)?,
-        Diagram::Description(m) => layout::description::layout(m, &skin, &measured)?,
-    };
-    let mut scene = layout::page::compose(body, &meta, &skin, &measured);
+    let mut scene = layout::page::compose(body(&skin, &measured)?, &meta, &skin, &measured);
     for w in warnings {
         scene.warn(w);
     }

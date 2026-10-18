@@ -39,7 +39,7 @@ impl PKind {
         }
     }
 
-    fn from_word(w: &str) -> Option<PKind> {
+    pub(crate) fn from_word(w: &str) -> Option<PKind> {
         Some(match w {
             "participant" => PKind::Participant,
             "actor" => PKind::Actor,
@@ -144,9 +144,8 @@ pub enum Event {
     GroupElse(Option<LabelId>),
     GroupEnd,
     /// Mermaid's `rect`: a filled background region without a frame, closed by
-    /// `HighlightEnd`. It nests with groups; PlantUML never emits it.
+    /// `GroupEnd`. It nests with groups; PlantUML never emits it.
     Highlight(Paint),
-    HighlightEnd,
     /// Activation changes that do not directly follow a message.
     Effect(Effect),
 }

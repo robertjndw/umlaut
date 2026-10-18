@@ -259,7 +259,7 @@ pub fn layout_info(model: &Model, skin: &Skin, m: &Measured) -> Result<(Body, Gr
         }
     }
     let edge_of_link = gdraw::build_edges(&mut g, &slots, &model.links, m, true);
-    let opts = graph_opts(skin, model.lr, model.reverse);
+    let opts = graph_opts(skin, model.dir);
     let lay = graph::layout(&g, &opts)?;
 
     let mut body = Scene::new(0.0, 0.0);

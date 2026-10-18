@@ -15,7 +15,7 @@
 
 use std::collections::BTreeMap;
 
-use super::shapes::{anchor_left, arrow, draw_icon, dashed, icon_size, note_shape, solid, IconKind, NoteKind, ARROW_DASH, DOTTED};
+use super::shapes::{anchor_left, arrow, draw_icon, dashed, dashed_or_solid, icon_size, note_shape, solid, IconKind, NoteKind, ARROW_DASH, DOTTED};
 use super::Body;
 use crate::plantuml::diagrams::sequence::*;
 use crate::plantuml::model::{LabelId, Measured};
@@ -87,16 +87,19 @@ struct Ext {
     off: f32,
 }
 
+/// A group or highlight region that has started but not ended, with how far left and
+/// right its content reaches so far.
 struct OpenGroup {
-    tab: LabelId,
-    cond: Option<LabelId>,
     top: f32,
     lo: Option<Ext>,
     hi: Option<Ext>,
-    elses: Vec<(f32, Option<LabelId>)>,
-    /// Set for a highlight region, which has no frame, tab or text: its fill and the
-    /// position in the highlight layer it must be drawn at.
-    fill: Option<(Paint, usize)>,
+    kind: GroupKind,
+}
+
+enum GroupKind {
+    Frame { tab: LabelId, cond: Option<LabelId>, elses: Vec<(f32, Option<LabelId>)> },
+    /// No frame, tab or text: only the fill, drawn at `slot` in the highlight layer.
+    Highlight { fill: Paint, slot: usize },
 }
 
 struct Bar {
@@ -220,11 +223,8 @@ impl<'a> D<'a> {
     }
 
     fn group_stroke(&self, border: &str) -> Stroke {
-        let st = &self.skin.style;
-        match &st.group_dash {
-            Some(d) => dashed(border, st.group_width, d),
-            None => solid(border, st.group_width),
-        }
+        let st = &self.skin.shapes;
+        dashed_or_solid(border, st.group_width, st.group_dash.as_ref().map(|d| &d[..]))
     }
 
     fn fill_of(&self, p: &Participant) -> Paint {
@@ -245,7 +245,7 @@ impl<'a> D<'a> {
         let border = self.border_of(p);
         let k = p.kind.keyword();
         let radius = self.skin.radius(&[&format!("sequence{k}"), k, "sequenceparticipant", "participant"], 5.0);
-        let pw = self.skin.style.participant_width;
+        let pw = self.skin.shapes.participant_width;
         let sty = || Style::new().fill(fill.clone()).stroke(solid(&border, pw));
         let left = x - w / 2.0;
         let (tw, th) = self.meas.size(p.label);
@@ -581,15 +581,15 @@ impl<'a> D<'a> {
         let top = self.cursor + 2.0;
         let tab_h = self.meas.h(tab) + 4.0;
         self.cursor = top + tab_h + 4.0;
-        self.groups.push(OpenGroup { tab, cond, top, lo: None, hi: None, elses: Vec::new(), fill: None });
+        self.groups.push(OpenGroup { top, lo: None, hi: None, kind: GroupKind::Frame { tab, cond, elses: Vec::new() } });
     }
 
     fn group_else(&mut self, cond: Option<LabelId>) {
         let y = self.cursor + 2.0;
         let h = cond.map_or(0.0, |c| self.meas.h(c));
         self.cursor = y + h + 6.0;
-        if let Some(g) = self.groups.last_mut() {
-            g.elses.push((y, cond));
+        if let Some(OpenGroup { kind: GroupKind::Frame { elses, .. }, .. }) = self.groups.last_mut() {
+            elses.push((y, cond));
         }
     }
 
@@ -597,19 +597,25 @@ impl<'a> D<'a> {
         let top = self.cursor + 2.0;
         self.cursor = top + 4.0;
         let slot = self.layers.hl.items.len();
-        self.groups.push(OpenGroup { tab: LabelId(0), cond: None, top, lo: None, hi: None, elses: Vec::new(), fill: Some((fill.clone(), slot)) });
+        self.groups.push(OpenGroup { top, lo: None, hi: None, kind: GroupKind::Highlight { fill: fill.clone(), slot } });
     }
 
-    fn highlight_end(&mut self) {
-        let Some(g) = self.groups.pop() else { return };
-        let Some((fill, slot)) = g.fill else { return };
-        let bottom = self.cursor + 2.0;
+    fn group_end(&mut self) {
+        let Some(OpenGroup { top, lo, hi, kind }) = self.groups.pop() else { return };
         let default = self.ext(1, 0.0);
-        let (lo, hi) = (g.lo.unwrap_or(default), g.hi.unwrap_or(default));
+        let (lo, hi) = (lo.unwrap_or(default), hi.unwrap_or(default));
+        match kind {
+            GroupKind::Frame { tab, cond, elses } => self.frame_end(top, lo, hi, tab, cond, &elses),
+            GroupKind::Highlight { fill, slot } => self.highlight_end(top, lo, hi, fill, slot),
+        }
+    }
+
+    fn highlight_end(&mut self, top: f32, lo: Ext, hi: Ext, fill: Paint, slot: usize) {
+        let bottom = self.cursor + 2.0;
         // Wider than a group frame so activation bars stay inside the region.
         let m = GROUP_MARGIN + 8.0;
         let (left, right) = (lo.x - m, hi.x + m);
-        self.layers.hl.push_rect(left, g.top, right - left, bottom - g.top, 0.0, Style::new().fill(fill));
+        self.layers.hl.push_rect(left, top, right - left, bottom - top, 0.0, Style::new().fill(fill));
         // Nested regions end first but have to be drawn on top of the enclosing one.
         if let Some(rect) = self.layers.hl.items.pop() {
             self.layers.hl.items.insert(slot, rect);
@@ -620,19 +626,16 @@ impl<'a> D<'a> {
         self.extent(Ext { x: left, col: lo.col, off: lo.off - m }, Ext { x: right, col: hi.col, off: hi.off + m });
     }
 
-    fn group_end(&mut self) {
-        let Some(g) = self.groups.pop() else { return };
+    fn frame_end(&mut self, top: f32, lo: Ext, hi: Ext, tab: LabelId, cond: Option<LabelId>, elses: &[(f32, Option<LabelId>)]) {
         let bottom = self.cursor + 2.0;
-        let (tab_w, tab_h) = (self.meas.w(g.tab) + 18.0, self.meas.h(g.tab) + 4.0);
-        let cond_w = g.cond.map_or(0.0, |c| self.meas.w(c) + 10.0);
+        let (tab_w, tab_h) = (self.meas.w(tab) + 18.0, self.meas.h(tab) + 4.0);
+        let cond_w = cond.map_or(0.0, |c| self.meas.w(c) + 10.0);
         let mut needed = tab_w + cond_w + 12.0;
-        for (_, c) in &g.elses {
+        for (_, c) in elses {
             if let Some(c) = c {
                 needed = needed.max(self.meas.w(*c) + 24.0);
             }
         }
-        let default = self.ext(1, 0.0);
-        let (lo, hi) = (g.lo.unwrap_or(default), g.hi.unwrap_or(default));
         let m = GROUP_MARGIN;
         let mut right = hi.x + m;
         let left = lo.x - m;
@@ -650,21 +653,21 @@ impl<'a> D<'a> {
         self.bounds(left, right);
 
         let border = self.st.group_border.clone();
-        let (gw, frame) = (self.skin.style.group_width, self.group_stroke(&border));
+        let (gw, frame) = (self.skin.shapes.group_width, self.group_stroke(&border));
         let fr = &mut self.layers.frame;
-        fr.push_rect(left, g.top, right - left, bottom - g.top, 0.0, Style::new().stroke(frame));
+        fr.push_rect(left, top, right - left, bottom - top, 0.0, Style::new().stroke(frame));
         // Tab with the bottom right corner cut off.
         let cut = 6.0;
         fr.push_polygon(
-            &[(left, g.top), (left + tab_w, g.top), (left + tab_w, g.top + tab_h - cut), (left + tab_w - cut, g.top + tab_h), (left, g.top + tab_h)],
+            &[(left, top), (left + tab_w, top), (left + tab_w, top + tab_h - cut), (left + tab_w - cut, top + tab_h), (left, top + tab_h)],
             Style::new().fill(self.st.group_tab_fill.clone()).stroke(solid(&border, gw)),
         );
-        self.meas.text_at(fr, g.tab, left + 8.0, g.top + 2.0, HAlign::Left);
-        if let Some(c) = g.cond {
+        self.meas.text_at(fr, tab, left + 8.0, top + 2.0, HAlign::Left);
+        if let Some(c) = cond {
             let ch = self.meas.h(c);
-            self.meas.text_at(fr, c, left + tab_w + 8.0, g.top + (tab_h - ch) / 2.0 + 1.0, HAlign::Left);
+            self.meas.text_at(fr, c, left + tab_w + 8.0, top + (tab_h - ch) / 2.0 + 1.0, HAlign::Left);
         }
-        for (y, cond) in &g.elses {
+        for (y, cond) in elses {
             fr.push_polyline(&[(left, *y), (right, *y)], dashed(&border, 1.0, &[2.0, 2.0]));
             if let Some(c) = cond {
                 self.meas.text_at(fr, *c, left + 8.0, *y + 2.0, HAlign::Left);
@@ -731,7 +734,7 @@ impl<'a> D<'a> {
         let top = self.cursor + 4.0;
         let h = tab_h + th + 8.0;
         let border = self.st.group_border.clone();
-        let (gw, frame) = (self.skin.style.group_width, self.group_stroke(&border));
+        let (gw, frame) = (self.skin.shapes.group_width, self.group_stroke(&border));
         let sc = &mut self.layers.top;
         sc.push_rect(left, top, right - left, h, 0.0, Style::new().fill(Paint::solid("#ffffff")).stroke(frame));
         let cut = 6.0;
@@ -759,7 +762,6 @@ impl<'a> D<'a> {
                 Event::GroupElse(c) => self.group_else(*c),
                 Event::GroupEnd => self.group_end(),
                 Event::Highlight(fill) => self.highlight_start(fill),
-                Event::HighlightEnd => self.highlight_end(),
                 Event::Effect(e) => {
                     let y = self.cursor;
                     self.apply_effects(std::slice::from_ref(e), y, false);
@@ -956,11 +958,8 @@ fn draw(m: &Model, skin: &Skin, meas: &Measured, xs: &[f32], reqs0: Reqs) -> Out
         let y1 = d.life_end[i].unwrap_or(line_end);
         let x = d.x(i);
         let mut cut = y0;
-        let lw = skin.style.lifeline_width;
-        let dash = match &skin.style.lifeline_dash {
-            Some(p) => dashed(&d.st.lifeline, lw, p),
-            None => solid(&d.st.lifeline, lw),
-        };
+        let lw = skin.shapes.lifeline_width;
+        let dash = dashed_or_solid(&d.st.lifeline, lw, skin.shapes.lifeline_dash.as_ref().map(|p| &p[..]));
         let dot = dashed(&d.st.lifeline, lw, &DOTTED);
         for &(a, b) in &d.delays {
             if b <= y0 || a >= y1 {
@@ -986,7 +985,7 @@ fn draw(m: &Model, skin: &Skin, meas: &Measured, xs: &[f32], reqs0: Reqs) -> Out
         let left = d.x(a) - d.head[a].0 / 2.0 - 5.0;
         let right = d.x(z) + d.head[z].0 / 2.0 + 5.0;
         let fill = b.fill.clone().unwrap_or_else(|| Paint::solid("#ffffff00"));
-        d.layers.bg.push_rect(left, 0.0, right - left, bottom + 2.0, 0.0, Style::new().fill(fill).stroke(solid(&skin.style.box_border, skin.style.box_width)));
+        d.layers.bg.push_rect(left, 0.0, right - left, bottom + 2.0, 0.0, Style::new().fill(fill).stroke(solid(&skin.shapes.box_border, skin.shapes.box_width)));
         if let Some(l) = b.label {
             let (cx, _) = ((left + right) / 2.0, 0.0);
             meas.text_at(&mut d.layers.bg, l, cx, 4.0, HAlign::Center);

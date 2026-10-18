@@ -15,13 +15,13 @@
 
 use std::collections::HashMap;
 
-use super::css::{parse_assign, parse_style, split_classes, Classes, Css};
-use super::lexer::{Dir, Header};
+use super::css::{split_classes, take_classes, Styles};
+use super::lexer::{parse_dir, Header};
 use super::state::id_len;
-use super::{text, theme};
+use super::{ignored, text, theme};
 use crate::plantuml::diagrams::class::{CKind, Class, Def, Ent, Group, Item, Member, Model as PModel, Note, Show};
 use crate::plantuml::diagrams::gcommon::{note_link, parse_arrow, Arrow, GroupStyle, Link, Look};
-use crate::plantuml::layout::graph::Dir as GDir;
+use crate::plantuml::layout::graph::{Dir as GDir, RankDir};
 use crate::plantuml::layout::Body;
 use crate::plantuml::lexer::{check_nesting, err, first_word, rest_after_word, Cursor, Line};
 use crate::plantuml::model::{Ctx, LabelId, Measured};
@@ -67,14 +67,14 @@ struct P<'a> {
     links: Vec<DLink>,
     /// Open namespaces as `(entity, line)`.
     scopes: Vec<(usize, usize)>,
-    dir: Option<Dir>,
-    classes: Classes,
-    assigned: HashMap<String, Vec<String>>,
-    styles: HashMap<String, Css>,
+    dir: Option<RankDir>,
+    styles: Styles,
+    /// Classes by key, so relations find their ends without a scan.
+    index: HashMap<String, usize>,
 }
 
 pub fn parse(lines: &[Line], header: &Header, ctx: &mut Ctx) -> Result<Model, String> {
-    let mut p = P { ctx, ents: Vec::new(), links: Vec::new(), scopes: Vec::new(), dir: header.dir, classes: Classes::default(), assigned: HashMap::new(), styles: HashMap::new() };
+    let mut p = P { ctx, ents: Vec::new(), links: Vec::new(), scopes: Vec::new(), dir: header.dir, styles: Styles::default(), index: HashMap::new() };
     let mut cur = Cursor::new(lines);
     while let Some(l) = cur.next() {
         if !l.text.is_empty() {
@@ -104,35 +104,28 @@ fn scan_name(s: &str) -> Option<(String, Vec<String>, &str)> {
         }
         (s[..n].to_string(), &s[n..])
     };
-    let mut classes = Vec::new();
-    let mut rest = rest;
-    while let Some(r) = rest.strip_prefix(":::") {
-        let n = r.find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-')).unwrap_or(r.len());
-        classes.push(r[..n].to_string());
-        rest = &r[n..];
-    }
+    let (classes, rest) = take_classes(rest);
     Some((name, classes, rest))
 }
 
 /// The relation token at the start of `s`: `<|--`, `..>`, `()--`, `--o` and so on.
 fn scan_token(s: &str) -> (&str, &str) {
-    let cs: Vec<(usize, char)> = s.char_indices().collect();
-    let mut i = 0;
-    while i < cs.len() {
-        let c = cs[i].1;
-        let prev = i.checked_sub(1).map(|j| cs[j].1);
-        let next = cs.get(i + 1).map(|x| x.1);
+    let mut cs = s.char_indices().peekable();
+    let mut prev = None;
+    let mut end = s.len();
+    while let Some((i, c)) = cs.next() {
+        let next = cs.peek().map(|x| x.1);
         let ok = match c {
             '<' | '>' | '|' | '*' | '-' | '.' | '(' | ')' => true,
             'o' => (i == 0 && matches!(next, Some('-' | '.'))) || (matches!(prev, Some('-' | '.')) && next.is_none_or(|n| n.is_whitespace() || n == '"')),
             _ => false,
         };
         if !ok {
+            end = i;
             break;
         }
-        i += 1;
+        prev = Some(c);
     }
-    let end = cs.get(i).map_or(s.len(), |x| x.0);
     (&s[..end], &s[end..])
 }
 
@@ -194,26 +187,19 @@ impl P<'_> {
         self.scopes.last().map(|s| s.0)
     }
 
-    fn find_class(&self, key: &str) -> Option<usize> {
-        self.ents.iter().position(|e| e.key == key && matches!(e.draft, Draft::Class { .. }))
-    }
-
     fn class(&mut self, key: &str) -> usize {
-        if let Some(i) = self.find_class(key) {
+        if let Some(&i) = self.index.get(key) {
             return i;
         }
         self.ents.push(DEnt { key: key.to_string(), parent: self.scope_parent(), draft: Draft::Class { display: None, annots: Vec::new(), members: Vec::new() } });
+        self.index.insert(key.to_string(), self.ents.len() - 1);
         self.ents.len() - 1
     }
 
-    fn assign(&mut self, key: &str, classes: &[String]) {
-        if !classes.is_empty() {
-            self.assigned.entry(key.to_string()).or_default().extend(classes.iter().cloned());
-        }
-    }
-
-    fn ignored(&mut self, l: &Line, what: &str) {
-        self.ctx.warn(l.no, &format!("`{what}` is not supported and is ignored"));
+    /// The class called `key`, with the `:::` classes written next to it.
+    fn styled_class(&mut self, key: &str, classes: &[String]) -> usize {
+        self.styles.assign(key, classes);
+        self.class(key)
     }
 
     fn statement(&mut self, l: &Line, cur: &mut Cursor) -> Result<(), String> {
@@ -229,7 +215,7 @@ impl P<'_> {
         if !looks_like_arrow(rest) {
             match word {
                 "direction" => {
-                    let Some(d) = Dir::parse(rest) else { return err(l.no, format!("unknown direction `{rest}`, use TB, BT, LR or RL")) };
+                    let Some(d) = parse_dir(rest) else { return err(l.no, format!("unknown direction `{rest}`, use TB, BT, LR or RL")) };
                     self.dir = Some(d);
                     return Ok(());
                 }
@@ -237,23 +223,19 @@ impl P<'_> {
                 "namespace" => return self.namespace(l, rest),
                 "note" => return self.note(l, rest),
                 "classDef" => {
-                    self.classes.define(rest);
+                    self.styles.define(rest);
                     return Ok(());
                 }
                 "cssClass" => {
-                    let Some((ids, names)) = parse_assign(rest) else { return err(l.no, format!("expected `cssClass \"<classes>\" <name>`, found \"{text}\"")) };
-                    for id in ids {
-                        self.assign(&id, &names);
-                    }
+                    let Some(()) = self.styles.assign_statement(rest) else { return err(l.no, format!("expected `cssClass \"<classes>\" <name>`, found \"{text}\"")) };
                     return Ok(());
                 }
                 "style" => {
-                    let Some((id, css)) = parse_style(rest) else { return err(l.no, format!("expected `style <class> <css>`, found \"{text}\"")) };
-                    self.styles.entry(id).or_default().merge(&css);
+                    let Some(()) = self.styles.style_statement(rest) else { return err(l.no, format!("expected `style <class> <css>`, found \"{text}\"")) };
                     return Ok(());
                 }
                 "click" | "link" | "callback" | "href" | "call" => {
-                    self.ignored(l, word);
+                    ignored(self.ctx, l, word);
                     return Ok(());
                 }
                 _ => {}
@@ -266,29 +248,24 @@ impl P<'_> {
             if !tail.trim().is_empty() {
                 return err(l.no, format!("cannot understand \"{}\" after the class name", tail.trim()));
             }
-            let idx = self.class(&name);
-            self.assign(&name, &classes);
+            let idx = self.styled_class(&name, &classes);
             self.annotate(idx, annot);
             return Ok(());
         }
         if let Some(rel) = parse_rel(text) {
-            let from = self.class(&rel.left.0);
-            self.assign(&rel.left.0, &rel.left.1);
-            let to = self.class(&rel.right.0);
-            self.assign(&rel.right.0, &rel.right.1);
+            let from = self.styled_class(&rel.left.0, &rel.left.1);
+            let to = self.styled_class(&rel.right.0, &rel.right.1);
             self.links.push(DLink { from, to, arrow: rel.arrow, label: rel.label, from_card: rel.left_card, to_card: rel.right_card, line: l.no });
             return Ok(());
         }
         if let Some((name, classes, rest)) = scan_name(text) {
             let rest = rest.trim_start();
             if rest.is_empty() {
-                self.class(&name);
-                self.assign(&name, &classes);
+                self.styled_class(&name, &classes);
                 return Ok(());
             }
             if let Some(member) = rest.strip_prefix(':') {
-                let idx = self.class(&name);
-                self.assign(&name, &classes);
+                let idx = self.styled_class(&name, &classes);
                 self.member(idx, member.trim());
                 return Ok(());
             }
@@ -345,7 +322,7 @@ impl P<'_> {
         if let (Some(scope), None) = (self.scope_parent(), self.ents[idx].parent) {
             self.ents[idx].parent = Some(scope);
         }
-        self.assign(&name, &classes);
+        self.styles.assign(&name, &classes);
         let display = label.or_else(|| generic.map(|g| format!("{name}~{g}~")));
         if let (Draft::Class { display: d, .. }, Some(display)) = (&mut self.ents[idx].draft, display) {
             *d = Some(display);
@@ -415,7 +392,9 @@ impl P<'_> {
 
     /// Phase two: styles are known, so labels can be registered in their fixed order.
     fn register(self) -> Model {
-        let P { ctx, ents, links, dir, classes, assigned, styles, .. } = self;
+        let P { ctx, ents, links, dir, styles, .. } = self;
+        let (cluster_base, note_base) = (theme::cluster(&ctx.skin), theme::note(&ctx.skin));
+        let (class_base, member_theme) = (theme::class_name(&ctx.skin).bold(), theme::class_member(&ctx.skin));
         let n = ents.len();
         let mut defs: Vec<Def> = Vec::with_capacity(n);
         let mut parents = Vec::with_capacity(n);
@@ -424,29 +403,21 @@ impl P<'_> {
             parents.push(e.parent);
             let def = match e.draft {
                 Draft::Namespace { display } => {
-                    let base = theme::cluster(&ctx.skin);
-                    let label = ctx.reg.add_opt(text::runs(display.as_deref().unwrap_or(&e.key), &base), None);
-                    let css = classes.resolve(assigned.get(&e.key).map_or(&[][..], |v| v), styles.get(&e.key));
+                    let label = ctx.reg.add_opt(text::runs(display.as_deref().unwrap_or(&e.key), &cluster_base), None);
+                    let css = styles.resolve(&e.key);
                     let mut look = css.look();
                     look.fill.get_or_insert_with(|| Paint::solid(theme::CLUSTER_FILL));
                     look.line.get_or_insert_with(|| crate::scene::hex(theme::BORDER2));
                     Def::Group(Group { label, style: GroupStyle::Rectangle, look })
                 }
                 Draft::Note { text: t } => {
-                    let label = ctx.reg.add(text::runs(&t, &theme::note(&ctx.skin)), None);
+                    let label = ctx.reg.add(text::runs(&t, &note_base), None);
                     Def::Note(Note { label, look: Look::default(), on_link: None })
                 }
                 Draft::Class { display, annots, members } => {
-                    let css = classes.resolve(assigned.get(&e.key).map_or(&[][..], |v| v), styles.get(&e.key));
-                    let mut name_base = theme::class_name(&ctx.skin).bold();
-                    let mut member_base = theme::class_member(&ctx.skin);
-                    for b in [&mut name_base, &mut member_base] {
-                        if let Some(c) = &css.color {
-                            b.color = crate::scene::hex(c);
-                        }
-                        b.italic |= css.italic;
-                    }
-                    member_base.bold |= css.bold;
+                    let css = styles.resolve(&e.key);
+                    // The name is bold already, so `font-weight` only shows on members.
+                    let (name_base, member_base) = (css.text(&class_base), css.text(&member_theme));
                     let name = ctx.reg.add(text::plain_runs(display.as_deref().unwrap_or(&e.key), &name_base), None);
                     let stereo_text: Vec<String> = annots.iter().map(|a| format!("\u{ab}{a}\u{bb}")).collect();
                     let stereo = (!stereo_text.is_empty()).then(|| ctx.reg.add(text::plain_runs(&stereo_text.join("\n"), &member_base), None));
@@ -509,8 +480,7 @@ impl P<'_> {
             l.from = new_index[l.from];
             l.to = new_index[l.to];
         }
-        let (lr, reverse) = dir.map_or((false, false), |d| (d.lr(), d.reverse()));
-        Model { ents, links: out_links, lr, reverse }
+        Model { ents, links: out_links, dir: dir.unwrap_or_default() }
     }
 }
 
@@ -669,9 +639,9 @@ mod tests {
     #[test]
     fn directions() {
         let (m, _) = model("direction LR\nA --> B").unwrap();
-        assert!(m.lr && !m.reverse);
+        assert_eq!(m.dir, RankDir::LR);
         let (m, _) = model("direction BT\nA --> B").unwrap();
-        assert!(!m.lr && m.reverse);
+        assert_eq!(m.dir, RankDir::BT);
     }
 
     #[test]

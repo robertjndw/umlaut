@@ -22,8 +22,8 @@ pub mod state;
 pub mod text;
 pub mod theme;
 
-use crate::plantuml::layout::page;
-use crate::plantuml::model::{Ctx, Measured, Registry};
+use crate::plantuml::lexer::Line;
+use crate::plantuml::model::{Ctx, Registry};
 use crate::scene::{Label, Scene};
 use lexer::Kind;
 
@@ -48,20 +48,20 @@ pub fn set_title(ctx: &mut Ctx, title: &str) {
     }
 }
 
+/// Warns that a statement the parser recognizes has no effect on the picture.
+fn ignored(ctx: &mut Ctx, l: &Line, what: &str) {
+    ctx.warn(l.no, &format!("`{what}` is not supported and is ignored"));
+}
+
 struct Front {
     header: lexer::Header,
-    lines: Vec<crate::plantuml::lexer::Line>,
+    lines: Vec<Line>,
     ctx: Ctx,
 }
 
 fn front(source: &[u8]) -> Result<Front, String> {
-    let lexer::Source { header, lines, title, wrap, warnings } = lexer::lex(source)?;
+    let lexer::Source { header, lines, title, warnings } = lexer::lex(source)?;
     let mut ctx = Ctx { skin: theme::skin(), reg: Registry::default(), meta: Default::default(), warnings };
-    // The init directive itself is ignored, but `wrap: true` is how sequence diagrams
-    // ask for wrapped messages; parsers read it back as `ctx.skin.flag("wrap")`.
-    if wrap {
-        ctx.skin.set("wrap", "true");
-    }
     if let Some(t) = title {
         set_title(&mut ctx, &t);
     }
@@ -79,13 +79,6 @@ fn parse(source: &[u8]) -> Result<Parsed, String> {
     Ok(Parsed { ctx, diagram })
 }
 
-fn check_sizes(expected: usize, got: usize) -> Result<(), String> {
-    if expected != got {
-        return Err(format!("the plugin expected {expected} label sizes but got {got}; the source changed between the two passes"));
-    }
-    Ok(())
-}
-
 /// Pass 1: parse and return every label whose size the layout needs, in a stable order.
 /// `layout` receives one measured size per label, in this order, so the order must be
 /// a pure function of `source`.
@@ -96,20 +89,12 @@ pub fn labels(source: &[u8]) -> Result<Vec<Label>, String> {
 /// Pass 2: lay out with `sizes[i] = (width, height)` in pt for `labels(source)[i]`.
 pub fn layout(source: &[u8], sizes: &[(f32, f32)]) -> Result<Scene, String> {
     let Parsed { ctx, diagram } = parse(source)?;
-    check_sizes(ctx.reg.labels.len(), sizes.len())?;
-    let Ctx { skin, reg, meta, warnings } = ctx;
-    let measured = Measured::new(reg.labels, sizes.to_vec());
-    let body = match &diagram {
-        Diagram::Flowchart(m) => flowchart::layout(m, &skin, &measured)?,
-        Diagram::Sequence(m) => sequence::layout(m, &skin, &measured)?,
-        Diagram::Class(m) => class::layout(m, &skin, &measured)?,
-        Diagram::State(m) => state::layout(m, &skin, &measured)?,
-    };
-    let mut scene = page::compose(body, &meta, &skin, &measured);
-    for w in warnings {
-        scene.warn(w);
-    }
-    Ok(scene)
+    crate::plantuml::finish(ctx, sizes, |skin, measured| match &diagram {
+        Diagram::Flowchart(m) => flowchart::layout(m, skin, measured),
+        Diagram::Sequence(m) => sequence::layout(m, skin, measured),
+        Diagram::Class(m) => class::layout(m, skin, measured),
+        Diagram::State(m) => state::layout(m, skin, measured),
+    })
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 //! statements, and the diagram type read off the header. Every line keeps the number of
 //! the physical line it started on so errors can point at it.
 
+use crate::plantuml::layout::graph::RankDir;
 use crate::plantuml::lexer::{err, Line};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,33 +14,14 @@ pub enum Kind {
     State,
 }
 
-/// Flowchart direction; `TD` is the same as `TB`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dir {
-    TB,
-    BT,
-    LR,
-    RL,
-}
-
-impl Dir {
-    pub fn lr(self) -> bool {
-        matches!(self, Dir::LR | Dir::RL)
-    }
-
-    /// Ranks run bottom to top or right to left.
-    pub fn reverse(self) -> bool {
-        matches!(self, Dir::BT | Dir::RL)
-    }
-
-    pub fn parse(s: &str) -> Option<Dir> {
-        match s {
-            "TB" | "TD" | "v" => Some(Dir::TB),
-            "BT" | "^" => Some(Dir::BT),
-            "LR" | ">" => Some(Dir::LR),
-            "RL" | "<" => Some(Dir::RL),
-            _ => None,
-        }
+/// A direction as written after a header or `direction`; `TD` is the same as `TB`.
+pub fn parse_dir(s: &str) -> Option<RankDir> {
+    match s {
+        "TB" | "TD" | "v" => Some(RankDir::TB),
+        "BT" | "^" => Some(RankDir::BT),
+        "LR" | ">" => Some(RankDir::LR),
+        "RL" | "<" => Some(RankDir::RL),
+        _ => None,
     }
 }
 
@@ -47,8 +29,10 @@ impl Dir {
 pub struct Header {
     pub kind: Kind,
     /// Only flowcharts have one on the header line.
-    pub dir: Option<Dir>,
+    pub dir: Option<RankDir>,
     pub line: usize,
+    /// An `%%{init}%%` directive asked for `wrap: true` (sequence diagrams wrap messages).
+    pub wrap: bool,
 }
 
 #[derive(Debug)]
@@ -58,8 +42,6 @@ pub struct Source {
     pub lines: Vec<Line>,
     /// `title:` of the front matter.
     pub title: Option<String>,
-    /// An `%%{init}%%` directive asked for `wrap: true` (sequence diagrams wrap messages).
-    pub wrap: bool,
     pub warnings: Vec<String>,
 }
 
@@ -202,39 +184,40 @@ fn asks_for_wrap(directive: &str) -> bool {
     squeezed.contains("wrap:true")
 }
 
-/// Walks `s` and tells for every character whether it is inside double quotes. Past the
-/// first unquoted `:` the rest of a sequence, state or class statement is free text
-/// (a message, a description), so an odd quote there must not swallow later lines.
-fn quote_state(s: &str, kind: Kind) -> impl Iterator<Item = (usize, char, bool)> + '_ {
-    let mut quoted = false;
-    let mut free_text = false;
-    s.char_indices().map(move |(i, c)| {
-        let inside = quoted;
-        if !free_text {
-            if c == '"' {
-                quoted = !quoted;
-            } else if c == ':' && !quoted && kind != Kind::Flowchart {
-                free_text = true;
-            }
-        }
-        (i, c, inside || (c == '"' && quoted))
-    })
+/// Tracks whether the text read so far ends inside double quotes. Past the first
+/// unquoted `:` the rest of a sequence, state or class statement is free text (a
+/// message, a description), so an odd quote there must not swallow later lines.
+struct Quotes {
+    kind: Kind,
+    quoted: bool,
+    free_text: bool,
 }
 
-fn quote_open(s: &str, kind: Kind) -> bool {
-    let mut open = false;
-    let mut free_text = false;
-    for c in s.chars() {
-        if free_text {
-            break;
+impl Quotes {
+    fn new(kind: Kind) -> Quotes {
+        Quotes { kind, quoted: false, free_text: false }
+    }
+
+    /// Reads one character and tells whether it is inside quotes, the quotes included.
+    fn feed(&mut self, c: char) -> bool {
+        let inside = self.quoted;
+        if !self.free_text {
+            if c == '"' {
+                self.quoted = !self.quoted;
+            } else if c == ':' && !self.quoted && self.kind != Kind::Flowchart {
+                self.free_text = true;
+            }
         }
-        match c {
-            '"' => open = !open,
-            ':' if !open && kind != Kind::Flowchart => free_text = true,
-            _ => {}
+        inside || (c == '"' && self.quoted)
+    }
+
+    fn feed_str(&mut self, s: &str) {
+        if !self.free_text {
+            s.chars().for_each(|c| {
+                self.feed(c);
+            });
         }
     }
-    open
 }
 
 /// Whether `s` ends in the start of an entity code, `#quot` or `#59`.
@@ -254,7 +237,9 @@ fn split_statements(s: &str, kind: Kind) -> Vec<String> {
     }
     let mut out = Vec::new();
     let mut start = 0;
-    for (i, c, quoted) in quote_state(s, kind) {
+    let mut quotes = Quotes::new(kind);
+    for (i, c) in s.char_indices() {
+        let quoted = quotes.feed(c);
         if c == ';' && !quoted && !ends_in_entity(&s[start..i]) {
             out.push(s[start..i].trim().to_string());
             start = i + 1;
@@ -266,9 +251,20 @@ fn split_statements(s: &str, kind: Kind) -> Vec<String> {
 }
 
 /// The word that names the diagram: up to whitespace or `;`.
-fn split_word(s: &str) -> (&str, &str) {
+pub(crate) fn split_word(s: &str) -> (&str, &str) {
     let end = s.find(|c: char| c.is_whitespace() || c == ';').unwrap_or(s.len());
     (&s[..end], &s[end..])
+}
+
+/// The diagram type a header word names.
+pub(crate) fn header_kind(word: &str) -> Option<Kind> {
+    Some(match word {
+        "flowchart" | "graph" | "flowchart-elk" => Kind::Flowchart,
+        "sequenceDiagram" => Kind::Sequence,
+        "classDiagram" | "classDiagram-v2" => Kind::Class,
+        "stateDiagram" | "stateDiagram-v2" => Kind::State,
+        _ => return None,
+    })
 }
 
 fn parse_header(no: usize, text: &str, warnings: &mut Vec<String>) -> Result<(Header, String), String> {
@@ -276,35 +272,28 @@ fn parse_header(no: usize, text: &str, warnings: &mut Vec<String>) -> Result<(He
         return err(no, "this is PlantUML, use plantuml() instead of mermaid()");
     }
     let (word, rest) = split_word(text);
-    let kind = match word {
-        "flowchart" | "graph" => Kind::Flowchart,
-        "flowchart-elk" => {
-            warnings.push(format!("line {no}: flowchart-elk is drawn with the default layout"));
-            Kind::Flowchart
-        }
-        "sequenceDiagram" => Kind::Sequence,
-        "classDiagram" | "classDiagram-v2" => Kind::Class,
-        "stateDiagram" | "stateDiagram-v2" => Kind::State,
-        other => {
-            let name = other.strip_suffix("-beta").unwrap_or(other);
-            return if UNSUPPORTED.contains(&name) {
-                err(no, format_args!("Mermaid {other} diagrams are not supported yet (supported: {SUPPORTED})"))
-            } else {
-                err(no, format_args!("expected a diagram type such as `flowchart TD`, found `{other}`"))
-            };
-        }
+    let Some(kind) = header_kind(word) else {
+        let name = word.strip_suffix("-beta").unwrap_or(word);
+        return if UNSUPPORTED.contains(&name) {
+            err(no, format_args!("Mermaid {word} diagrams are not supported yet (supported: {SUPPORTED})"))
+        } else {
+            err(no, format_args!("expected a diagram type such as `flowchart TD`, found `{word}`"))
+        };
     };
+    if word == "flowchart-elk" {
+        warnings.push(format!("line {no}: flowchart-elk is drawn with the default layout"));
+    }
     let mut rest = rest.trim_start();
     let mut dir = None;
     if kind == Kind::Flowchart {
         let (tok, after) = split_word(rest);
         if !tok.is_empty() {
-            dir = Some(Dir::parse(tok).ok_or_else(|| format!("line {no}: unknown flowchart direction `{tok}`, use TB, TD, BT, LR or RL"))?);
+            dir = Some(parse_dir(tok).ok_or_else(|| format!("line {no}: unknown flowchart direction `{tok}`, use TB, TD, BT, LR or RL"))?);
             rest = after;
         }
     }
     let rest = rest.trim_start().trim_start_matches(';');
-    Ok((Header { kind, dir, line: no }, rest.to_string()))
+    Ok((Header { kind, dir, line: no, wrap: false }, rest.to_string()))
 }
 
 pub fn lex(source: &[u8]) -> Result<Source, String> {
@@ -315,7 +304,8 @@ pub fn lex(source: &[u8]) -> Result<Source, String> {
     let Some((no, first)) = it.next() else {
         return Err("the Mermaid source is empty, expected a diagram type such as `flowchart TD`".to_string());
     };
-    let (header, rest) = parse_header(no, &first, &mut warnings)?;
+    let (mut header, rest) = parse_header(no, &first, &mut warnings)?;
+    header.wrap = wrap;
     let kind = header.kind;
 
     let mut pending: Vec<(usize, String)> = vec![(no, rest)];
@@ -323,23 +313,23 @@ pub fn lex(source: &[u8]) -> Result<Source, String> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < pending.len() {
-        let (no, mut t) = pending[i].clone();
+        let mut quotes = Quotes::new(kind);
+        quotes.feed_str(&pending[i].1);
         let mut j = i;
-        while quote_open(&t, kind) && j + 1 < pending.len() {
+        while quotes.quoted && j + 1 < pending.len() {
             j += 1;
-            t.push('\n');
-            t.push_str(&pending[j].1);
+            quotes.feed_str(&pending[j].1);
         }
         // A quote that never closes is literal text, not the rest of the file.
-        let joined = !quote_open(&t, kind);
-        if !joined {
-            t = pending[i].1.clone();
+        if quotes.quoted {
             j = i;
         }
+        let no = pending[i].0;
+        let t = if j == i { std::mem::take(&mut pending[i].1) } else { pending[i..=j].iter().map(|p| p.1.as_str()).collect::<Vec<_>>().join("\n") };
         i = j + 1;
         out.extend(split_statements(&t, kind).into_iter().map(|text| Line { no, text }));
     }
-    Ok(Source { header, lines: out, title, wrap, warnings })
+    Ok(Source { header, lines: out, title, warnings })
 }
 
 #[cfg(test)]
@@ -358,7 +348,7 @@ mod tests {
     fn utf8_and_bom() {
         assert!(lex(&[0xff, 0xfe]).unwrap_err().contains("not valid UTF-8"));
         let s = lex("\u{feff}flowchart LR\nA-->B".as_bytes()).unwrap();
-        assert_eq!(s.header.dir, Some(Dir::LR));
+        assert_eq!(s.header.dir, Some(RankDir::LR));
     }
 
     #[test]
@@ -386,9 +376,9 @@ mod tests {
     fn directives_are_ignored_with_a_warning() {
         let s = lex(b"%%{init: {\"theme\": \"dark\"}}%%\nflowchart TD\nA-->B").unwrap();
         assert_eq!(s.warnings, vec!["line 1: %%{init}%% directives are ignored".to_string()]);
-        assert!(!s.wrap);
+        assert!(!s.header.wrap);
         let s = lex(b"%%{\n  init: {\n    \"sequence\": { \"wrap\": true }\n  }\n}%%\nsequenceDiagram").unwrap();
-        assert!(s.wrap);
+        assert!(s.header.wrap);
         assert_eq!(s.header.line, 6);
         assert_eq!(s.warnings.len(), 1);
         assert!(fails("%%{init: {\nflowchart TD").starts_with("line 1:"));
@@ -403,10 +393,10 @@ mod tests {
     #[test]
     fn headers() {
         let h = |s: &str| lex(s.as_bytes()).unwrap().header;
-        assert_eq!(h("graph"), Header { kind: Kind::Flowchart, dir: None, line: 1 });
-        assert_eq!(h("graph TD;").dir, Some(Dir::TB));
-        assert_eq!(h("flowchart BT").dir, Some(Dir::BT));
-        assert_eq!(h("flowchart RL").dir, Some(Dir::RL));
+        assert_eq!(h("graph"), Header { kind: Kind::Flowchart, dir: None, line: 1, wrap: false });
+        assert_eq!(h("graph TD;").dir, Some(RankDir::TB));
+        assert_eq!(h("flowchart BT").dir, Some(RankDir::BT));
+        assert_eq!(h("flowchart RL").dir, Some(RankDir::RL));
         assert_eq!(h("sequenceDiagram").kind, Kind::Sequence);
         assert_eq!(h("classDiagram-v2").kind, Kind::Class);
         assert_eq!(h("stateDiagram-v2").kind, Kind::State);

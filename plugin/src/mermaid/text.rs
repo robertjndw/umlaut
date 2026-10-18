@@ -10,8 +10,9 @@
 //! PlantUML's creole is never used: its `//`, `--` and `~` rules would mangle URLs and
 //! generics.
 
-use crate::drawio::label::{decode_entities, html_runs, TextProps};
+use crate::drawio::{decode_entities, html_runs, TextProps};
 use crate::plantuml::creole::Base;
+use crate::plantuml::lexer::unquote;
 use crate::scene::Run;
 
 fn props(base: &Base) -> TextProps {
@@ -29,18 +30,10 @@ fn props(base: &Base) -> TextProps {
 }
 
 fn run(text: &str, base: &Base, bold: bool, italic: bool) -> Run {
-    let mut r = Run::new(text);
-    r.size = base.size;
-    r.color = base.color.clone();
-    r.font = base.font.clone();
-    r.bold = base.bold || bold;
-    r.italic = base.italic || italic;
-    r
-}
-
-fn strip_quotes(s: &str) -> &str {
-    let t = s.trim();
-    t.strip_prefix('"').and_then(|x| x.strip_suffix('"')).filter(|_| t.len() >= 2).unwrap_or(t)
+    let mut p = props(base);
+    p.bold |= bold;
+    p.italic |= italic;
+    p.run(text.to_string())
 }
 
 /// Rewrites Mermaid's `#name;` and `#123;` to the HTML entities `&name;` and `&#123;`.
@@ -69,8 +62,8 @@ fn entities_to_html(s: &str) -> String {
 }
 
 pub fn runs(s: &str, base: &Base) -> Vec<Run> {
-    let inner = strip_quotes(s);
-    if let Some(md) = inner.strip_prefix('`').and_then(|x| x.strip_suffix('`')).filter(|_| inner.len() >= 2) {
+    let inner = unquote(s);
+    if let Some(md) = inner.strip_prefix('`').and_then(|x| x.strip_suffix('`')) {
         return markdown(md, base);
     }
     html_runs(&entities_to_html(inner), &props(base))
@@ -80,7 +73,7 @@ pub fn runs(s: &str, base: &Base) -> Vec<Run> {
 /// line break, `~T~` a generic.
 pub fn plain_runs(s: &str, base: &Base) -> Vec<Run> {
     let mut out = Vec::new();
-    for (i, line) in split_breaks(&strip_quotes(s).replace("\r\n", "\n")).iter().enumerate() {
+    for (i, line) in split_breaks(unquote(s)).into_iter().enumerate() {
         if i > 0 {
             out.push(Run::br());
         }
@@ -93,9 +86,9 @@ pub fn plain_runs(s: &str, base: &Base) -> Vec<Run> {
 }
 
 /// Splits at newlines and `<br>`, `<br/>`, `<br />` (any case).
-fn split_breaks(s: &str) -> Vec<String> {
-    let mut parts = vec![String::new()];
-    let mut i = 0;
+fn split_breaks(s: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let (mut start, mut i) = (0, 0);
     while i < s.len() {
         let rest = &s[i..];
         let br = rest.get(..3).filter(|h| h.eq_ignore_ascii_case("<br")).and_then(|_| {
@@ -103,19 +96,19 @@ fn split_breaks(s: &str) -> Vec<String> {
             let inner = rest[3..end].trim();
             (inner.is_empty() || inner == "/").then_some(end + 1)
         });
-        if let Some(n) = br {
-            parts.push(String::new());
-            i += n;
-            continue;
-        }
-        let c = rest.chars().next().unwrap();
-        if c == '\n' {
-            parts.push(String::new());
-        } else {
-            parts.last_mut().unwrap().push(c);
-        }
-        i += c.len_utf8();
+        let skip = match br {
+            Some(n) => n,
+            None if rest.starts_with('\n') => 1,
+            None => {
+                i += rest.chars().next().unwrap().len_utf8();
+                continue;
+            }
+        };
+        parts.push(&s[start..i]);
+        i += skip;
+        start = i;
     }
+    parts.push(&s[start..]);
     parts
 }
 
@@ -153,7 +146,7 @@ fn generics(s: &str) -> String {
 /// `***both***` and real newlines as breaks.
 fn markdown(s: &str, base: &Base) -> Vec<Run> {
     let mut out = Vec::new();
-    for (n, line) in s.replace("\r\n", "\n").lines().enumerate() {
+    for (n, line) in s.lines().enumerate() {
         if n > 0 {
             out.push(Run::br());
         }

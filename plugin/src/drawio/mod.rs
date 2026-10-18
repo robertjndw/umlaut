@@ -7,7 +7,7 @@
 mod decode;
 mod edges;
 mod geometry;
-pub(crate) mod label;
+mod label;
 mod shapes;
 mod style;
 
@@ -19,7 +19,8 @@ use crate::DrawioOptions;
 
 use edges::Terminal;
 use geometry::{Model, Pt, Rect};
-use label::TextProps;
+// Mermaid labels take the same HTML subset as draw.io values.
+pub(crate) use label::{decode_entities, html_runs, TextProps};
 use style::Style;
 
 /// Space around the drawing so strokes at the edge are not cut off.

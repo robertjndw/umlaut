@@ -6,6 +6,7 @@
 
 use super::gcommon::*;
 use crate::plantuml::creole;
+use crate::plantuml::layout::graph::RankDir;
 use crate::plantuml::lexer::{err, find_outside_quotes, first_word, rest_after_word, unquote, Cursor, Line};
 use crate::plantuml::model::{Ctx, LabelId};
 
@@ -138,9 +139,7 @@ pub type Ent = super::gcommon::Ent<Def>;
 pub struct Model {
     pub ents: Vec<Ent>,
     pub links: Vec<Link>,
-    pub lr: bool,
-    /// Ranks run bottom to top or right to left (Mermaid `direction BT|RL`).
-    pub reverse: bool,
+    pub dir: RankDir,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -180,11 +179,11 @@ struct P<'a> {
     scopes: Vec<Scope>,
     rules: Vec<Rule>,
     last: Option<usize>,
-    lr: bool,
+    dir: RankDir,
 }
 
 pub fn parse(lines: &[Line], ctx: &mut Ctx) -> Result<Model, String> {
-    let mut p = P { ctx, ents: Vec::new(), links: Vec::new(), scopes: Vec::new(), rules: Vec::new(), last: None, lr: false };
+    let mut p = P { ctx, ents: Vec::new(), links: Vec::new(), scopes: Vec::new(), rules: Vec::new(), last: None, dir: RankDir::TB };
     let mut cur = Cursor::new(lines);
     while let Some(l) = cur.next() {
         if !l.text.is_empty() {
@@ -199,7 +198,7 @@ pub fn parse(lines: &[Line], ctx: &mut Ctx) -> Result<Model, String> {
         return err(lines.first().map_or(1, |l| l.no), "the class diagram is empty");
     }
     p.apply_rules();
-    Ok(Model { ents: p.ents, links: p.links, lr: p.lr, reverse: false })
+    Ok(Model { ents: p.ents, links: p.links, dir: p.dir })
 }
 
 /// Position of `pat` that is not inside `<...>`, so `Foo<T extends Bar>` is not an `extends`.
@@ -302,11 +301,11 @@ impl P<'_> {
         let word = first_word(&lower).trim_end_matches('{');
         match lower.as_str() {
             "left to right direction" => {
-                self.lr = true;
+                self.dir = RankDir::LR;
                 return Ok(());
             }
             "top to bottom direction" => {
-                self.lr = false;
+                self.dir = RankDir::TB;
                 return Ok(());
             }
             "}" => {
@@ -837,6 +836,6 @@ mod tests {
 
     #[test]
     fn direction_directive() {
-        assert!(model("left to right direction\nclass A").unwrap().0.lr);
+        assert!(model("left to right direction\nclass A").unwrap().0.dir.lr());
     }
 }

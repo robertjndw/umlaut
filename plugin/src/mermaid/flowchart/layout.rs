@@ -6,7 +6,7 @@ use crate::mermaid::theme;
 use crate::plantuml::diagrams::gcommon::GroupStyle;
 use crate::plantuml::layout::gdraw::{self, cylinder, draw_group, graph_opts, group_metrics, title_centered, GraphInfo, GroupLook, Slot};
 use crate::plantuml::layout::graph::{self, Arrange, Border, Cluster, Graph, Node as GNode, Rect};
-use crate::plantuml::layout::shapes::{dashed, solid};
+use crate::plantuml::layout::shapes::dashed_or_solid;
 use crate::plantuml::layout::Body;
 use crate::plantuml::model::Measured;
 use crate::plantuml::skin::Skin;
@@ -51,10 +51,8 @@ fn metrics(shape: Shape, (tw, th): (f32, f32)) -> (f32, f32, Border) {
         // The diamond is square, as in Mermaid; the label rectangle w by h then fits
         // exactly in the diamond whatever its proportions.
         Shape::Rhombus => (w + h, w + h, Border::Diamond),
-        Shape::Hexagon => slanted(w + 2.0 * lean),
-        Shape::LeanRight | Shape::LeanLeft => slanted(w + lean),
-        Shape::Trapezoid | Shape::TrapezoidAlt => slanted(w + 2.0 * lean),
-        Shape::Asymmetric => slanted(w + lean),
+        Shape::Hexagon | Shape::Trapezoid | Shape::TrapezoidAlt => slanted(w + 2.0 * lean),
+        Shape::LeanRight | Shape::LeanLeft | Shape::Asymmetric => slanted(w + lean),
     }
 }
 
@@ -98,7 +96,7 @@ pub fn layout_info(model: &Model, skin: &Skin, m: &Measured) -> Result<(Body, Gr
         }
     }
     let edge_of_link = gdraw::build_edges(&mut g, &slots, &model.links, m, false);
-    let lay = graph::layout(&g, &graph_opts(skin, model.lr, model.reverse))?;
+    let lay = graph::layout(&g, &graph_opts(skin, model.dir))?;
 
     let mut body = Scene::new(0.0, 0.0);
     let mut titles = Vec::new();
@@ -114,13 +112,14 @@ pub fn layout_info(model: &Model, skin: &Skin, m: &Measured) -> Result<(Body, Gr
     };
     let mut order: Vec<usize> = (0..model.ents.len()).filter(|&i| matches!(slots[i], Slot::Cluster(_))).collect();
     order.sort_by_key(|&i| (depth(i), i));
+    let (cluster_fill, cluster_border) = (skin.fill(&["package"], theme::CLUSTER_FILL), skin.border(&["package"], theme::BORDER2));
     for i in order {
         let (Def::Subgraph(s), Slot::Cluster(c)) = (&model.ents[i].def, &slots[i]) else { continue };
-        let fill = s.css.fill.as_deref().map_or_else(|| skin.fill(&["package"], theme::CLUSTER_FILL), Paint::solid);
+        let fill = s.css.fill.as_deref().map_or_else(|| cluster_fill.clone(), Paint::solid);
         let look = GroupLook {
             fill: Some(fill.clone()),
             tab_fill: fill,
-            border: s.css.stroke.clone().unwrap_or_else(|| skin.border(&["package"], theme::BORDER2)),
+            border: s.css.stroke.clone().unwrap_or_else(|| cluster_border.clone()),
             width: s.css.stroke_width.unwrap_or(1.0),
             dashed: s.css.dash.is_some(),
         };
@@ -132,9 +131,10 @@ pub fn layout_info(model: &Model, skin: &Skin, m: &Measured) -> Result<(Body, Gr
 
     let arrow_color = skin.color(&["arrowcolor"], theme::LINE);
     gdraw::draw_links(&mut body, &lay, &model.links, &edge_of_link, |_| false, &arrow_color, false, skin, m);
+    let defaults = NodeDefaults { fill: skin.fill(&["node"], theme::PRIMARY), border: skin.border(&["node"], theme::BORDER), radius: skin.radius(&["node"], ROUND * 2.0) };
     for (e, slot) in model.ents.iter().zip(&slots) {
         if let (Def::Node(n), Slot::Node(i)) = (&e.def, slot) {
-            draw_node(&mut body, n, &lay.nodes[*i], m, skin);
+            draw_node(&mut body, n, &lay.nodes[*i], m, &defaults);
         }
     }
 
@@ -145,17 +145,20 @@ pub fn layout_info(model: &Model, skin: &Skin, m: &Measured) -> Result<(Body, Gr
     Ok((out, info))
 }
 
-fn draw_node(scene: &mut Scene, n: &Node, r: &Rect, m: &Measured, skin: &Skin) {
+/// What a node without its own `style` is drawn with.
+struct NodeDefaults {
+    fill: Paint,
+    border: String,
+    radius: f32,
+}
+
+fn draw_node(scene: &mut Scene, n: &Node, r: &Rect, m: &Measured, defaults: &NodeDefaults) {
     let css = &n.css;
-    let fill = css.fill.as_deref().map_or_else(|| skin.fill(&["node"], theme::PRIMARY), Paint::solid);
-    let border = css.stroke.clone().unwrap_or_else(|| skin.border(&["node"], theme::BORDER));
+    let fill = css.fill.as_deref().map_or_else(|| defaults.fill.clone(), Paint::solid);
+    let border = css.stroke.as_deref().unwrap_or(&defaults.border);
     let width = css.stroke_width.unwrap_or(1.0);
-    let stroke = || -> Stroke {
-        match &css.dash {
-            Some(d) => dashed(&border, width, &[d[0], d.get(1).copied().unwrap_or(d[0])]),
-            None => solid(&border, width),
-        }
-    };
+    let dash = css.dash.as_ref().map(|d| [d[0], d.get(1).copied().unwrap_or(d[0])]);
+    let stroke = || -> Stroke { dashed_or_solid(border, width, dash.as_ref().map(|d| &d[..])) };
     let st = || Style::new().fill(fill.clone()).stroke(stroke());
     let (cx, cy) = r.center();
     let (x, y, right, bottom) = (r.x, r.y, r.right(), r.bottom());
@@ -164,7 +167,7 @@ fn draw_node(scene: &mut Scene, n: &Node, r: &Rect, m: &Measured, skin: &Skin) {
     let mut text_y = cy;
     match n.shape {
         Shape::Rect => scene.push_rect(x, y, r.w, r.h, 0.0, st()),
-        Shape::Round => scene.push_rect(x, y, r.w, r.h, skin.radius(&["node"], ROUND * 2.0), st()),
+        Shape::Round => scene.push_rect(x, y, r.w, r.h, defaults.radius, st()),
         Shape::Stadium => scene.push_rect(x, y, r.w, r.h, r.h / 2.0, st()),
         Shape::Subroutine => {
             scene.push_rect(x, y, r.w, r.h, 0.0, st());
@@ -173,7 +176,7 @@ fn draw_node(scene: &mut Scene, n: &Node, r: &Rect, m: &Measured, skin: &Skin) {
             }
         }
         Shape::Cylinder => {
-            cylinder(scene, r, LID, fill.clone(), &border, width);
+            cylinder(scene, r, LID, fill.clone(), border, width);
             text_y += LID;
         }
         Shape::Circle => scene.push_ellipse(x, y, r.w, r.h, st()),

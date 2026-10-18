@@ -9,6 +9,7 @@
 
 use super::gcommon::*;
 use crate::plantuml::creole;
+use crate::plantuml::layout::graph::RankDir;
 use crate::plantuml::lexer::{err, find_outside_quotes, first_word, rest_after_word, Cursor, Line};
 use crate::plantuml::model::{Ctx, LabelId};
 
@@ -149,7 +150,7 @@ pub type Ent = super::gcommon::Ent<Def>;
 pub struct Model {
     pub ents: Vec<Ent>,
     pub links: Vec<Link>,
-    pub lr: bool,
+    pub dir: RankDir,
 }
 
 struct P<'a> {
@@ -158,7 +159,7 @@ struct P<'a> {
     links: Vec<Link>,
     scopes: Vec<(usize, usize)>,
     last: Option<usize>,
-    lr: bool,
+    dir: RankDir,
     /// Whether the diagram has use case syntax, which decides what a bare name is.
     usecase_world: bool,
 }
@@ -169,7 +170,7 @@ pub fn parse(lines: &[Line], ctx: &mut Ctx) -> Result<Model, String> {
         let w = first_word(t).to_ascii_lowercase();
         w == "usecase" || w == "usecase/" || (t.starts_with('(') && !t.starts_with("()")) || t.starts_with(':') || t.contains("> (") || t.contains("- (")
     });
-    let mut p = P { ctx, ents: Vec::new(), links: Vec::new(), scopes: Vec::new(), last: None, lr: false, usecase_world };
+    let mut p = P { ctx, ents: Vec::new(), links: Vec::new(), scopes: Vec::new(), last: None, dir: RankDir::TB, usecase_world };
     let mut cur = Cursor::new(lines);
     while let Some(l) = cur.next() {
         if !l.text.is_empty() {
@@ -182,7 +183,7 @@ pub fn parse(lines: &[Line], ctx: &mut Ctx) -> Result<Model, String> {
     if p.ents.is_empty() {
         return err(lines.first().map_or(1, |l| l.no), "the diagram is empty");
     }
-    Ok(Model { ents: p.ents, links: p.links, lr: p.lr })
+    Ok(Model { ents: p.ents, links: p.links, dir: p.dir })
 }
 
 /// `<<include>>` in text becomes the guillemets PlantUML draws.
@@ -253,11 +254,11 @@ impl P<'_> {
         let word = first_word(&lower).trim_end_matches('{');
         match lower.as_str() {
             "left to right direction" => {
-                self.lr = true;
+                self.dir = RankDir::LR;
                 return Ok(());
             }
             "top to bottom direction" => {
-                self.lr = false;
+                self.dir = RankDir::TB;
                 return Ok(());
             }
             "}" => {

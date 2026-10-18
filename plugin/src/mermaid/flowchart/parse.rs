@@ -7,11 +7,10 @@ use std::collections::HashMap;
 
 use super::{Def, Model, Node, Shape, Subgraph};
 use crate::mermaid::css::{parse_assign, parse_style, Classes, Css};
-use crate::mermaid::lexer::{Dir, Header};
+use crate::mermaid::lexer::{parse_dir, Header};
 use crate::mermaid::{text, theme};
-use crate::plantuml::creole::Base;
 use crate::plantuml::diagrams::gcommon::{Arrow, Deco, Ent, Link};
-use crate::plantuml::lexer::{err, Line};
+use crate::plantuml::lexer::{err, first_word, rest_after_word, unquote, Line};
 use crate::plantuml::model::Ctx;
 
 /// Edge widths. Mermaid draws normal edges 2 px and thick ones 3.5 px next to 1 px node
@@ -213,11 +212,13 @@ impl Sc {
         } else {
             v.shaped = self.shaped()?;
         }
-        let rest = self.rest();
-        if rest.starts_with(":::") {
-            let end = rest.find(|c: char| c.is_whitespace() || c == '&').unwrap_or(rest.len());
-            v.classes = rest[..end].split(":::").map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect();
-            self.i += rest[..end].chars().count();
+        if self.starts(":::") {
+            let start = self.i;
+            while self.peek().is_some_and(|c| !c.is_whitespace() && c != '&') {
+                self.i += 1;
+            }
+            let suffix: String = self.c[start..self.i].iter().collect();
+            v.classes = suffix.split(":::").map(|c| c.trim().to_string()).filter(|c| !c.is_empty()).collect();
         }
         Ok(v)
     }
@@ -486,69 +487,53 @@ struct Parser<'a> {
     links: Vec<PLink>,
     stack: Vec<Open>,
     classes: Classes,
-    /// The same `classDef`s without `default`, which only styles nodes.
-    sub_classes: Classes,
     styles: Vec<(usize, String, Css)>,
     assigns: Vec<(usize, Vec<String>, Vec<String>)>,
     link_default: Css,
     link_styles: Vec<(usize, usize, Css)>,
 }
 
-fn split_word(s: &str) -> (&str, &str) {
-    match s.split_once(char::is_whitespace) {
-        Some((w, r)) => (w, r.trim()),
-        None => (s, ""),
-    }
-}
-
-fn unquote(s: &str) -> &str {
-    let t = s.trim();
-    t.strip_prefix('"').and_then(|x| x.strip_suffix('"')).filter(|_| t.len() >= 2).unwrap_or(t)
-}
-
 impl Parser<'_> {
-    fn warn(&mut self, no: usize, msg: impl std::fmt::Display) {
-        self.ctx.warnings.push(format!("line {no}: {msg}"));
-    }
-
-    fn touch(&mut self, v: &Vertex) -> usize {
-        let idx = match self.index.get(&v.id) {
+    /// The entity called `key`, created as `kind` if it is new, and counted as mentioned
+    /// in the innermost open subgraph.
+    fn intern(&mut self, key: &str, kind: impl FnOnce() -> Kind) -> usize {
+        let idx = match self.index.get(key) {
             Some(&i) => i,
             None => {
-                self.ents.push(PEnt { key: v.id.clone(), kind: Kind::Node { shape: Shape::Rect, text: None }, parent: None, classes: Vec::new(), own: Css::default() });
-                self.index.insert(v.id.clone(), self.ents.len() - 1);
+                self.ents.push(PEnt { key: key.to_string(), kind: kind(), parent: None, classes: Vec::new(), own: Css::default() });
+                self.index.insert(key.to_string(), self.ents.len() - 1);
                 self.ents.len() - 1
             }
         };
-        if let (Some((shape, label)), Kind::Node { shape: s, text }) = (&v.shaped, &mut self.ents[idx].kind) {
-            *s = *shape;
-            *text = Some(label.clone());
-        }
-        self.ents[idx].classes.extend(v.classes.iter().cloned());
         if let Some(top) = self.stack.last_mut() {
             top.mentions.push(idx);
         }
         idx
     }
 
+    fn touch(&mut self, v: &Vertex) -> usize {
+        let idx = self.intern(&v.id, || Kind::Node { shape: Shape::Rect, text: None });
+        if let (Some((shape, label)), Kind::Node { shape: s, text }) = (&v.shaped, &mut self.ents[idx].kind) {
+            *s = *shape;
+            *text = Some(label.clone());
+        }
+        self.ents[idx].classes.extend(v.classes.iter().cloned());
+        idx
+    }
+
     fn statement(&mut self, line: &Line) -> Result<(), String> {
         let no = line.no;
         let text = line.text.trim();
-        let (word, rest) = split_word(text);
+        let (word, rest) = (first_word(text), rest_after_word(text));
         match word {
             "subgraph" => return self.open(rest, no),
             "end" if rest.is_empty() => return self.close(no),
-            "direction" if Dir::parse(rest).is_some() => {
-                self.warn(no, "`direction` is ignored; the whole diagram flows in the direction of the header");
+            "direction" if parse_dir(rest).is_some() => {
+                self.ctx.warn(no, "`direction` is ignored; the whole diagram flows in the direction of the header");
                 return Ok(());
             }
             "classDef" if !rest.is_empty() => {
                 self.classes.define(rest);
-                let (names, decl) = split_word(rest);
-                let kept: Vec<&str> = names.split(',').map(str::trim).filter(|n| !n.is_empty() && *n != "default").collect();
-                if !kept.is_empty() {
-                    self.sub_classes.define(&format!("{} {decl}", kept.join(",")));
-                }
                 return Ok(());
             }
             "class" if !rest.is_empty() => {
@@ -563,14 +548,14 @@ impl Parser<'_> {
             }
             "linkStyle" if !rest.is_empty() => return self.link_style(rest, no),
             "click" | "call" | "href" if !rest.is_empty() => {
-                self.warn(no, format!("`{word}` is ignored (diagrams are static)"));
+                self.ctx.warn(no, &format!("`{word}` is ignored (diagrams are static)"));
                 return Ok(());
             }
             _ => {}
         }
         let chain = Sc::new(text, no).chain()?;
         if chain.groups.len() == 1 && chain.groups[0].len() == 1 && chain.groups[0][0].edge_props {
-            self.warn(no, "edge properties such as `animate` are ignored");
+            self.ctx.warn(no, "edge properties such as `animate` are ignored");
             return Ok(());
         }
         let mut ids: Vec<Vec<usize>> = Vec::new();
@@ -578,7 +563,7 @@ impl Parser<'_> {
             let mut one = Vec::new();
             for v in g {
                 if let Some(name) = &v.unsupported {
-                    self.warn(no, format!("shape `{name}` is not supported and `{}` is drawn as a rectangle", v.id));
+                    self.ctx.warn(no, &format!("shape `{name}` is not supported and `{}` is drawn as a rectangle", v.id));
                 }
                 one.push(self.touch(v));
             }
@@ -612,18 +597,8 @@ impl Parser<'_> {
         };
         // A subgraph mentioned in an arrow before its `subgraph` line is already a plain
         // node; it turns into the cluster in place, so those arrows keep their ends.
-        let idx = match self.index.get(&key) {
-            Some(&i) => i,
-            None => {
-                self.ents.push(PEnt { key: key.clone(), kind: Kind::Sub { title: None }, parent: None, classes: Vec::new(), own: Css::default() });
-                self.index.insert(key, self.ents.len() - 1);
-                self.ents.len() - 1
-            }
-        };
+        let idx = self.intern(&key, || Kind::Sub { title: None });
         self.ents[idx].kind = Kind::Sub { title };
-        if let Some(top) = self.stack.last_mut() {
-            top.mentions.push(idx);
-        }
         self.stack.push(Open { ent: idx, line: no, mentions: Vec::new() });
         Ok(())
     }
@@ -642,7 +617,7 @@ impl Parser<'_> {
     }
 
     fn link_style(&mut self, rest: &str, no: usize) -> Result<(), String> {
-        let (targets, decl) = split_word(rest);
+        let (targets, decl) = (first_word(rest), rest_after_word(rest));
         let css = Css::parse(decl);
         if targets == "default" {
             self.link_default.merge(&css);
@@ -665,20 +640,27 @@ impl Parser<'_> {
         for (no, id, css) in std::mem::take(&mut self.styles) {
             match self.index.get(&id) {
                 Some(&i) => self.ents[i].own.merge(&css),
-                None => self.warn(no, format!("`style` refers to `{id}`, which is not in the diagram")),
+                None => self.ctx.warn(no, &format!("`style` refers to `{id}`, which is not in the diagram")),
             }
         }
         for (no, ids, names) in std::mem::take(&mut self.assigns) {
             for id in ids {
                 match self.index.get(&id) {
                     Some(&i) => self.ents[i].classes.extend(names.iter().cloned()),
-                    None => self.warn(no, format!("`class` refers to `{id}`, which is not in the diagram")),
+                    None => self.ctx.warn(no, &format!("`class` refers to `{id}`, which is not in the diagram")),
                 }
             }
         }
-        for (no, n, _) in self.link_styles.clone() {
-            if n >= self.links.len() {
-                self.warn(no, format!("`linkStyle` refers to link {n}, but the diagram has {} links", self.links.len()));
+        let n_links = self.links.len();
+        for &(no, n, _) in &self.link_styles {
+            if n >= n_links {
+                self.ctx.warn(no, &format!("`linkStyle` refers to link {n}, but the diagram has {n_links} links"));
+            }
+        }
+        let mut link_css = vec![self.link_default.clone(); n_links];
+        for (_, n, c) in &self.link_styles {
+            if let Some(css) = link_css.get_mut(*n) {
+                css.merge(c);
             }
         }
 
@@ -686,15 +668,6 @@ impl Parser<'_> {
         let node_base = theme::node(skin);
         let cluster_base = theme::cluster(skin);
         let edge_base = theme::edge(skin);
-        let styled = |base: &Base, css: &Css| {
-            let mut b = base.clone();
-            if let Some(c) = &css.color {
-                b.color.clone_from(c);
-            }
-            b.bold |= css.bold;
-            b.italic |= css.italic;
-            b
-        };
 
         let mut ents = Vec::new();
         for e in &self.ents {
@@ -702,12 +675,12 @@ impl Parser<'_> {
                 Kind::Node { shape, text: t } => {
                     let css = self.classes.resolve(&e.classes, Some(&e.own));
                     let src = t.as_deref().unwrap_or(&e.key);
-                    let label = self.ctx.reg.add_opt(text::runs(src, &styled(&node_base, &css)), None);
+                    let label = self.ctx.reg.add_opt(text::runs(src, &css.text(&node_base)), None);
                     Def::Node(Node { label, shape: *shape, css })
                 }
                 Kind::Sub { title } => {
-                    let css = if e.classes.is_empty() && e.own == Css::default() { Css::default() } else { self.sub_classes.resolve(&e.classes, Some(&e.own)) };
-                    let title = title.as_ref().and_then(|t| self.ctx.reg.add_opt(text::runs(t, &styled(&cluster_base, &css)), None));
+                    let css = self.classes.resolve_without_default(&e.classes, Some(&e.own));
+                    let title = title.as_ref().and_then(|t| self.ctx.reg.add_opt(text::runs(t, &css.text(&cluster_base)), None));
                     Def::Subgraph(Subgraph { title, css })
                 }
             };
@@ -715,12 +688,8 @@ impl Parser<'_> {
         }
 
         let mut links = Vec::new();
-        for (i, l) in self.links.iter().enumerate() {
-            let mut css = self.link_default.clone();
-            for (_, _, c) in self.link_styles.iter().filter(|(_, n, _)| *n == i) {
-                css.merge(c);
-            }
-            let label = l.tok.label.as_ref().and_then(|t| self.ctx.reg.add_opt(text::runs(t, &styled(&edge_base, &css)), None));
+        for (l, css) in self.links.iter().zip(link_css) {
+            let label = l.tok.label.as_ref().and_then(|t| self.ctx.reg.add_opt(text::runs(t, &css.text(&edge_base)), None));
             let mut arrow = Arrow::plain(l.tok.len);
             arrow.tail = l.tok.tail;
             arrow.head = l.tok.head;
@@ -732,8 +701,7 @@ impl Parser<'_> {
             links.push(Link { from: l.from, to: l.to, arrow, label, label_dir: None, from_card: None, to_card: None, line: l.line });
         }
 
-        let dir = header.dir.unwrap_or(Dir::TB);
-        Ok(Model { ents, links, lr: dir.lr(), reverse: dir.reverse() })
+        Ok(Model { ents, links, dir: header.dir.unwrap_or_default() })
     }
 }
 
@@ -745,7 +713,6 @@ pub fn parse(lines: &[Line], header: &Header, ctx: &mut Ctx) -> Result<Model, St
         links: Vec::new(),
         stack: Vec::new(),
         classes: Classes::default(),
-        sub_classes: Classes::default(),
         styles: Vec::new(),
         assigns: Vec::new(),
         link_default: Css::default(),

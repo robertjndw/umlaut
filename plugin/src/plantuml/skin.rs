@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use super::colors::{parse_color, parse_paint, to_gray};
 use super::creole::Base;
-use super::layout::shapes::{NoteKind, LIFELINE_DASH};
+use super::layout::shapes::{NoteKind, LIFELINE_DASH, LINK_DASH};
 use crate::scene::{hex, Paint};
 
 pub const BORDER: &str = "#181818";
@@ -66,7 +66,7 @@ impl Default for Shapes {
             group_width: 1.5,
             participant_width: 1.5,
             note_kind: NoteKind::Note,
-            link_dash: [7.0, 5.0],
+            link_dash: LINK_DASH,
             label_background: None,
         }
     }
@@ -75,7 +75,7 @@ impl Default for Shapes {
 #[derive(Debug, Clone, Default)]
 pub struct Skin {
     params: HashMap<String, String>,
-    pub style: Shapes,
+    pub shapes: Shapes,
 }
 
 impl Skin {
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn default_shapes_are_plantumls_own_look() {
-        let st = Skin::new().style;
+        let st = Skin::new().shapes;
         assert_eq!(st.lifeline_dash, Some([5.0, 5.0]));
         assert_eq!((st.lifeline_width, st.box_width, st.group_width, st.participant_width), (1.0, 1.0, 1.5, 1.5));
         assert_eq!(st.box_border, BLACK);

@@ -165,12 +165,41 @@ pub struct Graph {
     pub edges: Vec<Edge>,
 }
 
+/// Which way the ranks run. PlantUML only has `TB` and `LR` (`left to right direction`);
+/// Mermaid can reverse either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RankDir {
+    #[default]
+    TB,
+    BT,
+    LR,
+    RL,
+}
+
+impl RankDir {
+    /// Ranks run across the page rather than down it.
+    pub fn lr(self) -> bool {
+        matches!(self, RankDir::LR | RankDir::RL)
+    }
+
+    /// Ranks run bottom to top or right to left.
+    pub fn reverse(self) -> bool {
+        matches!(self, RankDir::BT | RankDir::RL)
+    }
+
+    fn dot(self) -> &'static str {
+        match self {
+            RankDir::TB => "TB",
+            RankDir::BT => "BT",
+            RankDir::LR => "LR",
+            RankDir::RL => "RL",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Opts {
-    /// `left to right direction`.
-    pub lr: bool,
-    /// Ranks run bottom to top (or right to left with `lr`) instead of the other way.
-    pub reverse: bool,
+    pub dir: RankDir,
     pub style: Style,
     /// Gap between neighbors in a rank.
     pub node_sep: f32,
@@ -180,7 +209,7 @@ pub struct Opts {
 
 impl Default for Opts {
     fn default() -> Opts {
-        Opts { lr: false, reverse: false, style: Style::Spline, node_sep: 35.0, rank_sep: 60.0 }
+        Opts { dir: RankDir::TB, style: Style::Spline, node_sep: 35.0, rank_sep: 60.0 }
     }
 }
 
@@ -599,12 +628,7 @@ fn dot_text(dg: &DotGraph, clusters: &[Cluster], o: &Opts, compound: bool) -> St
     let mut out = String::from("digraph G {\n");
     out.push_str(&format!(
         "  graph [rankdir={} nodesep={} ranksep={} splines={splines} compound={compound} remincross=true]\n",
-        match (o.lr, o.reverse) {
-            (false, false) => "TB",
-            (false, true) => "BT",
-            (true, false) => "LR",
-            (true, true) => "RL",
-        },
+        o.dir.dot(),
         inches(o.node_sep),
         inches(o.rank_sep)
     ));
@@ -899,8 +923,8 @@ impl<'a> Solver<'a> {
             let (len, flipped, horizontal) = match e.hint {
                 Hint::Auto(n) => (n.max(1), false, n <= 1),
                 // Dot's ranks run the other way when reversed, so the screen directions swap.
-                Hint::Dir(Dir::Down) => (2, self.o.reverse, false),
-                Hint::Dir(Dir::Up) => (2, !self.o.reverse, false),
+                Hint::Dir(Dir::Down) => (2, self.o.dir.reverse(), false),
+                Hint::Dir(Dir::Up) => (2, !self.o.dir.reverse(), false),
                 Hint::Dir(Dir::Right) => (1, false, true),
                 Hint::Dir(Dir::Left) => (1, true, true),
             };
@@ -1190,7 +1214,7 @@ pub fn layout(g: &Graph, o: &Opts) -> Result<Layout, String> {
         if free(c) {
             continue;
         }
-        let snapped = snap_to_route(&polys[i], c, (w, h), o.lr).into_iter();
+        let snapped = snap_to_route(&polys[i], c, (w, h), o.dir.lr()).into_iter();
         let beside = [0.5f32, 0.35, 0.65, 0.2, 0.8].into_iter().flat_map(|t| {
             let (m, off) = beside_at(&polys[i], t, |t| t, (w, h));
             [-1.0f32, 1.0].map(|k| (m.0 + off.0 * k, m.1 + off.1 * k))
@@ -1230,7 +1254,7 @@ pub fn layout(g: &Graph, o: &Opts) -> Result<Layout, String> {
                 let toward_end = |t: f32| if at_head { 1.0 - t } else { t };
                 // Close to the node first, on both sides of the line.
                 [6.0f32, 14.0, 24.0, 36.0, 52.0].into_iter().find_map(|along| {
-                    let t = (along + (if o.lr { w } else { h }) / 2.0) / total;
+                    let t = (along + (if o.dir.lr() { w } else { h }) / 2.0) / total;
                     let (m, off) = beside_at(poly, t, toward_end, (w, h));
                     [1.0f32, -1.0].into_iter().map(|k| (m.0 + off.0 * k, m.1 + off.1 * k)).find(|&c| clear(c))
                 })
@@ -1270,8 +1294,8 @@ mod tests {
     #[test]
     fn dot_gets_the_rank_direction() {
         let dg = DotGraph::default();
-        for (lr, reverse, want) in [(false, false, "TB"), (false, true, "BT"), (true, false, "LR"), (true, true, "RL")] {
-            let text = dot_text(&dg, &[], &Opts { lr, reverse, ..Opts::default() }, false);
+        for (dir, want) in [(RankDir::TB, "TB"), (RankDir::BT, "BT"), (RankDir::LR, "LR"), (RankDir::RL, "RL")] {
+            let text = dot_text(&dg, &[], &Opts { dir, ..Opts::default() }, false);
             assert!(text.contains(&format!("rankdir={want} ")), "{text}");
         }
     }
@@ -1279,17 +1303,17 @@ mod tests {
     #[test]
     fn reverse_puts_the_head_before_the_tail() {
         let g = chain();
-        let at = |lr, reverse| {
-            let l = layout(&g, &Opts { lr, reverse, ..Opts::default() }).unwrap();
+        let at = |dir| {
+            let l = layout(&g, &Opts { dir, ..Opts::default() }).unwrap();
             (l.nodes[0].center(), l.nodes[1].center())
         };
-        let (a, b) = at(false, false);
+        let (a, b) = at(RankDir::TB);
         assert!(b.1 > a.1, "{a:?} {b:?}");
-        let (a, b) = at(false, true);
+        let (a, b) = at(RankDir::BT);
         assert!(b.1 < a.1, "{a:?} {b:?}");
-        let (a, b) = at(true, false);
+        let (a, b) = at(RankDir::LR);
         assert!(b.0 > a.0, "{a:?} {b:?}");
-        let (a, b) = at(true, true);
+        let (a, b) = at(RankDir::RL);
         assert!(b.0 < a.0, "{a:?} {b:?}");
     }
 
@@ -1297,7 +1321,7 @@ mod tests {
     fn directed_hints_keep_their_screen_direction_when_reversed() {
         let mut g = chain();
         g.edges[0].hint = Hint::Dir(Dir::Down);
-        let l = layout(&g, &Opts { reverse: true, ..Opts::default() }).unwrap();
+        let l = layout(&g, &Opts { dir: RankDir::BT, ..Opts::default() }).unwrap();
         assert!(l.nodes[1].center().1 > l.nodes[0].center().1);
     }
 

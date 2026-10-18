@@ -12,11 +12,12 @@
 
 use std::collections::HashMap;
 
-use super::css::{parse_assign, parse_style, split_classes, Classes, Css};
-use super::lexer::Header;
-use super::{text, theme};
+use super::css::{split_classes, take_classes, Styles};
+use super::lexer::{parse_dir, Header};
+use super::{ignored, text, theme};
 use crate::plantuml::diagrams::gcommon::{note_link, note_target, parse_note, Arrow, Deco, Link, Ref};
 use crate::plantuml::diagrams::state::{Def, Ent, Note, SKind, State};
+use crate::plantuml::layout::graph::RankDir;
 use crate::plantuml::layout::Body;
 use crate::plantuml::lexer::{check_nesting, err, first_word, rest_after_word, Cursor, Line};
 use crate::plantuml::model::{Ctx, Measured};
@@ -49,10 +50,10 @@ struct P<'a> {
     scopes: Vec<Scope>,
     stacked: Vec<(usize, bool)>,
     last: Option<usize>,
-    dir: Option<super::lexer::Dir>,
-    classes: Classes,
-    assigned: HashMap<String, Vec<String>>,
-    styles: HashMap<String, Css>,
+    dir: Option<RankDir>,
+    styles: Styles,
+    /// States by key, so transitions find their ends without a scan.
+    index: HashMap<String, usize>,
 }
 
 /// A state reference in a transition: `[*]` or an id.
@@ -71,9 +72,8 @@ pub fn parse(lines: &[Line], header: &Header, ctx: &mut Ctx) -> Result<Model, St
         stacked: Vec::new(),
         last: None,
         dir: header.dir,
-        classes: Classes::default(),
-        assigned: HashMap::new(),
-        styles: HashMap::new(),
+        styles: Styles::default(),
+        index: HashMap::new(),
     };
     let mut cur = Cursor::new(lines);
     while let Some(l) = cur.next() {
@@ -97,17 +97,15 @@ fn is_id_char(c: char) -> bool {
 /// Length of the id at the start of `s`. A `-` or `.` inside an id is fine as long as
 /// another id character follows, so `A-->B` still ends the id at the arrow.
 pub(super) fn id_len(s: &str) -> usize {
-    let cs: Vec<(usize, char)> = s.char_indices().collect();
-    let mut i = 0;
-    while i < cs.len() {
-        let c = cs[i].1;
-        let ok = is_id_char(c) || (matches!(c, '-' | '.') && i > 0 && cs.get(i + 1).is_some_and(|n| is_id_char(n.1)) && cs.get(i + 1).is_some_and(|n| n.1 != '-'));
+    let mut cs = s.char_indices().peekable();
+    while let Some((i, c)) = cs.next() {
+        let next = cs.peek().map(|n| n.1);
+        let ok = is_id_char(c) || (matches!(c, '-' | '.') && i > 0 && next.is_some_and(is_id_char));
         if !ok {
-            break;
+            return i;
         }
-        i += 1;
     }
-    cs.get(i).map_or(s.len(), |x| x.0)
+    s.len()
 }
 
 /// `[*]` or an id, plus any `:::class` suffixes, and what follows.
@@ -122,13 +120,7 @@ fn scan_id(s: &str) -> Option<(Id, Vec<String>, &str)> {
         }
         (Id::Name(s[..n].to_string()), &s[n..])
     };
-    let mut classes = Vec::new();
-    let mut rest = rest;
-    while let Some(r) = rest.strip_prefix(":::") {
-        let n = r.find(|c: char| !(is_id_char(c) || c == '-')).unwrap_or(r.len());
-        classes.push(r[..n].to_string());
-        rest = &r[n..];
-    }
+    let (classes, rest) = take_classes(rest);
     Some((id, classes, rest))
 }
 
@@ -143,54 +135,37 @@ impl P<'_> {
         self.scope_parent().map_or(String::new(), |i| i.to_string())
     }
 
-    fn new_state(&mut self, key: &str, kind: SKind) -> usize {
+    /// The state called `key`, created with `kind` (and made the last one) if it is new.
+    fn find_or_new(&mut self, key: &str, kind: SKind) -> usize {
+        if let Some(&i) = self.index.get(key) {
+            return i;
+        }
         self.ents.push(DEnt { key: key.to_string(), parent: self.scope_parent(), draft: Draft::State { kind, descs: Vec::new() } });
         let idx = self.ents.len() - 1;
+        if !key.is_empty() {
+            self.index.insert(key.to_string(), idx);
+        }
         self.last = Some(idx);
         idx
     }
 
-    fn find(&self, key: &str) -> Option<usize> {
-        self.ents.iter().position(|e| e.key == key && !key.is_empty() && matches!(e.draft, Draft::State { .. }))
-    }
-
     fn state(&mut self, key: &str) -> usize {
-        match self.find(key) {
-            Some(i) => i,
-            None => self.new_state(key, SKind::State),
-        }
+        self.find_or_new(key, SKind::State)
     }
 
-    fn pseudo(&mut self, key: String, kind: SKind) -> usize {
-        match self.find(&key) {
-            Some(i) => i,
-            None => self.new_state(&key, kind),
-        }
-    }
-
-    fn resolve_id(&mut self, id: &Id, classes: &[String], role: Option<bool>) -> usize {
+    /// A transition end; `[*]` is the start state as a source and the end state as a target.
+    fn resolve_id(&mut self, id: &Id, classes: &[String], is_end: bool) -> usize {
         match id {
             Id::Star => {
-                let is_end = role == Some(false);
                 let key = format!("[*]{}@{}", if is_end { "end" } else { "start" }, self.scope_key());
-                self.pseudo(key, if is_end { SKind::End } else { SKind::Start })
+                self.find_or_new(&key, if is_end { SKind::End } else { SKind::Start })
             }
             Id::Name(n) => {
                 let i = self.state(n);
-                self.assign(n, classes);
+                self.styles.assign(n, classes);
                 i
             }
         }
-    }
-
-    fn assign(&mut self, key: &str, classes: &[String]) {
-        if !classes.is_empty() {
-            self.assigned.entry(key.to_string()).or_default().extend(classes.iter().cloned());
-        }
-    }
-
-    fn ignored(&mut self, l: &Line, what: &str) {
-        self.ctx.warn(l.no, &format!("`{what}` is not supported and is ignored"));
     }
 
     fn statement(&mut self, l: &Line, cur: &mut Cursor) -> Result<(), String> {
@@ -214,27 +189,19 @@ impl P<'_> {
                     }
                 }
                 "classDef" => {
-                    self.classes.define(rest);
+                    self.styles.define(rest);
                     return Ok(());
                 }
                 "class" => {
-                    let Some((ids, names)) = parse_assign(rest) else { return err(l.no, format!("expected `class <states> <name>`, found \"{text}\"")) };
-                    for id in ids {
-                        self.assign(&id, &names);
-                    }
+                    let Some(()) = self.styles.assign_statement(rest) else { return err(l.no, format!("expected `class <states> <name>`, found \"{text}\"")) };
                     return Ok(());
                 }
                 "style" => {
-                    let Some((id, css)) = parse_style(rest) else { return err(l.no, format!("expected `style <state> <css>`, found \"{text}\"")) };
-                    self.styles.entry(id).or_default().merge(&css);
+                    let Some(()) = self.styles.style_statement(rest) else { return err(l.no, format!("expected `style <state> <css>`, found \"{text}\"")) };
                     return Ok(());
                 }
-                "click" | "callback" | "link" | "href" => {
-                    self.ignored(l, word);
-                    return Ok(());
-                }
-                "scale" => {
-                    self.ignored(l, word);
+                "click" | "callback" | "link" | "href" | "scale" => {
+                    ignored(self.ctx, l, word);
                     return Ok(());
                 }
                 _ => {}
@@ -250,14 +217,15 @@ impl P<'_> {
                         None if tail.is_empty() => None,
                         None => return err(l.no, format!("cannot understand \"{tail}\" after the transition")),
                     };
-                    return self.transition(l, (left, lc), (right, rc), label);
+                    self.transition(l, (left, lc), (right, rc), label);
+                    return Ok(());
                 }
                 return err(l.no, format!("expected a state after `-->` in \"{text}\""));
             }
             if after.is_empty() || after.starts_with(':') {
                 let Id::Name(name) = &left else { return err(l.no, "`[*]` can only be used in a transition") };
                 let idx = self.state(name);
-                self.assign(name, &lc);
+                self.styles.assign(name, &lc);
                 self.last = Some(idx);
                 if let Some(d) = after.strip_prefix(':') {
                     self.describe(idx, d.trim());
@@ -269,7 +237,7 @@ impl P<'_> {
     }
 
     fn direction(&mut self, l: &Line, rest: &str) -> Result<(), String> {
-        let Some(d) = super::lexer::Dir::parse(rest.trim()) else { return err(l.no, format!("unknown direction `{rest}`, use TB, BT, LR or RL")) };
+        let Some(d) = parse_dir(rest.trim()) else { return err(l.no, format!("unknown direction `{rest}`, use TB, BT, LR or RL")) };
         if self.scopes.is_empty() {
             self.dir = Some(d);
         } else {
@@ -361,7 +329,7 @@ impl P<'_> {
             return err(l.no, format!("cannot understand the state id \"{key}\", ids may hold letters, digits and `_`"));
         }
         let idx = self.state(&key);
-        self.assign(&key, &classes);
+        self.styles.assign(&key, &classes);
         self.last = Some(idx);
         if let Draft::State { kind: k, .. } = &mut self.ents[idx].draft {
             if kind != SKind::State {
@@ -389,14 +357,13 @@ impl P<'_> {
         }
     }
 
-    fn transition(&mut self, l: &Line, left: (Id, Vec<String>), right: (Id, Vec<String>), label: Option<String>) -> Result<(), String> {
-        let from = self.resolve_id(&left.0, &left.1, Some(true));
-        let to = self.resolve_id(&right.0, &right.1, Some(false));
+    fn transition(&mut self, l: &Line, left: (Id, Vec<String>), right: (Id, Vec<String>), label: Option<String>) {
+        let from = self.resolve_id(&left.0, &left.1, false);
+        let to = self.resolve_id(&right.0, &right.1, true);
         let mut arrow = Arrow::plain(2);
         arrow.head = Deco::Arrow;
         self.links.push(Link { from, to, arrow, label: None, label_dir: None, from_card: None, to_card: None, line: l.no });
         self.link_labels.push(label);
-        Ok(())
     }
 
     fn note(&mut self, l: &Line, n: crate::plantuml::diagrams::gcommon::NoteSyntax) -> Result<(), String> {
@@ -404,13 +371,7 @@ impl P<'_> {
             return err(l.no, "the note is empty");
         }
         let (target, on_link) = note_target(&n.place, self.last, self.links.len(), l.no, |r| match r {
-            Ref::Name(name) => {
-                if let Some(i) = self.find(name) {
-                    Ok(i)
-                } else {
-                    Ok(self.new_state(name, SKind::State))
-                }
-            }
+            Ref::Name(name) => Ok(self.state(name)),
             _ => err(l.no, "a note can only be attached to a state"),
         })?;
         let parent = target.and_then(|t| self.ents[t].parent).or_else(|| self.scope_parent());
@@ -424,24 +385,20 @@ impl P<'_> {
 
     /// Phase two: styles are known, so labels can be registered in their fixed order.
     fn register(self) -> Model {
-        let P { ctx, ents, mut links, link_labels, stacked, dir, classes, assigned, styles, .. } = self;
+        let P { ctx, ents, mut links, link_labels, stacked, dir, styles, .. } = self;
+        let (note_base, state_base) = (theme::note(&ctx.skin), theme::state(&ctx.skin));
         let mut out = Vec::with_capacity(ents.len());
         for e in ents {
             let def = match e.draft {
                 Draft::Region => Def::Region,
                 Draft::Note { text, on_link } => {
-                    let label = ctx.reg.add(text::runs(&text, &theme::note(&ctx.skin)), None);
+                    let label = ctx.reg.add(text::runs(&text, &note_base), None);
                     Def::Note(Note { label, look: Default::default(), on_link })
                 }
                 Draft::State { kind, descs } => {
-                    let css = classes.resolve(assigned.get(&e.key).map_or(&[][..], |v| v), styles.get(&e.key));
+                    let css = styles.resolve(&e.key);
                     let look = css.look();
-                    let mut base = theme::state(&ctx.skin);
-                    if let Some(c) = &css.color {
-                        base.color = crate::scene::hex(c);
-                    }
-                    base.bold |= css.bold;
-                    base.italic |= css.italic;
+                    let base = css.text(&state_base);
                     let mut descs = descs.into_iter();
                     let shows_name = kind == SKind::State;
                     let name_text = descs.next().unwrap_or_else(|| e.key.clone());
@@ -456,8 +413,7 @@ impl P<'_> {
         for (link, label) in links.iter_mut().zip(link_labels) {
             link.label = label.and_then(|t| ctx.reg.add_opt(text::runs(&t, &edge), None));
         }
-        let (lr, reverse) = dir.map_or((false, false), |d| (d.lr(), d.reverse()));
-        Model { ents: out, links, lr, reverse, stacked }
+        Model { ents: out, links, dir: dir.unwrap_or_default(), stacked }
     }
 }
 
@@ -567,11 +523,11 @@ mod tests {
     #[test]
     fn directions() {
         let (m, _) = model("direction RL\nA --> B").unwrap();
-        assert!(m.lr && m.reverse);
+        assert_eq!(m.dir, RankDir::RL);
         let (m, _) = model("A --> B").unwrap();
-        assert!(!m.lr && !m.reverse);
+        assert_eq!(m.dir, RankDir::TB);
         let (m, ctx) = model("state X {\n  direction LR\n  A\n}\ndirection BT").unwrap();
-        assert!(!m.lr && m.reverse);
+        assert_eq!(m.dir, RankDir::BT);
         assert_eq!(ctx.warnings.len(), 1);
         assert!(model("direction XY").is_err());
     }

@@ -2,8 +2,8 @@
 //! their decorations, labels and cardinalities, containers, notes and a few outlines
 //! (cloud, cylinder, 3D box) that more than one diagram type needs.
 
-use super::graph::{dist, lerp, Edge, End, Graph, Hint, Layout, Opts, Pt, Rect, Route, Style as LineStyle};
-use super::shapes::{arrowhead, dashed, head_inset, note_shape, solid, Head};
+use super::graph::{dist, lerp, Edge, End, Graph, Hint, Layout, Opts, Pt, RankDir, Rect, Route, Style as LineStyle};
+use super::shapes::{arrowhead, dashed, dashed_or_solid, head_inset, note_shape, solid, Head, LINK_DASH};
 use crate::plantuml::diagrams::gcommon::{Arrow, Deco, GroupStyle, Link};
 use crate::plantuml::model::{LabelId, Measured};
 use crate::plantuml::skin::{self, Shapes, Skin};
@@ -85,9 +85,9 @@ impl Slot {
 
 /// Dot options for a graph diagram, with `skinparam nodesep` and `ranksep` (pixels, as
 /// in PlantUML) overriding the spacing.
-pub fn graph_opts(skin: &Skin, lr: bool, reverse: bool) -> Opts {
+pub fn graph_opts(skin: &Skin, dir: RankDir) -> Opts {
     let d = Opts::default();
-    Opts { lr, reverse, style: line_style(skin), node_sep: skin.num(&["nodesep"], d.node_sep).max(2.0), rank_sep: skin.num(&["ranksep"], d.rank_sep).max(2.0) }
+    Opts { dir, style: line_style(skin), node_sep: skin.num(&["nodesep"], d.node_sep).max(2.0), rank_sep: skin.num(&["ranksep"], d.rank_sep).max(2.0) }
 }
 
 pub fn line_style(skin: &Skin) -> LineStyle {
@@ -125,7 +125,7 @@ pub fn draw_links(scene: &mut Scene, lay: &Layout, links: &[Link], edge_of_link:
             continue;
         }
         let (from_card, to_card) = if cards { (l.from_card, l.to_card) } else { (None, None) };
-        let d = LinkDraw { arrow: &l.arrow, color, label: l.label, label_dir: l.label_dir, from_card, to_card, shapes: &skin.style };
+        let d = LinkDraw { arrow: &l.arrow, color, label: l.label, label_dir: l.label_dir, from_card, to_card, shapes: &skin.shapes };
         draw_link(scene, &lay.routes[*ei], &d, m);
     }
     for r in note_routes {
@@ -169,7 +169,6 @@ pub fn collect_info(lay: &Layout, g: &Graph, slots: &[Slot], edge_of_link: &[Opt
     info
 }
 
-pub const LINK_DASH: [f32; 2] = [7.0, 5.0];
 /// Dash of the thin lines that tie notes to what they annotate.
 const NOTE_DASH: [f32; 2] = [2.0, 2.0];
 /// Width of the small triangle that marks a label's direction, plus its gap to the text.
@@ -195,7 +194,7 @@ pub fn deco_head(d: Deco) -> Head {
 
 /// The outline of a box, dashed like links when its look asks for it.
 pub fn outline(color: &str, width: f32, dashed_line: bool) -> Stroke {
-    if dashed_line { dashed(color, width, &LINK_DASH) } else { solid(color, width) }
+    dashed_or_solid(color, width, dashed_line.then_some(&LINK_DASH[..]))
 }
 
 /// Size a link's label needs in the layout, with room for its direction arrow.
@@ -246,7 +245,7 @@ pub fn draw_link(scene: &mut Scene, route: &Route, l: &LinkDraw, m: &Measured) {
     }
     let width = a.width.unwrap_or(1.0);
     let color = a.color.as_deref().unwrap_or(l.color);
-    let stroke = if a.dashed { dashed(color, width, &l.shapes.link_dash) } else { solid(color, width) };
+    let stroke = dashed_or_solid(color, width, a.dashed.then_some(&l.shapes.link_dash[..]));
     let (tail, head) = (deco_head(a.tail), deco_head(a.head));
 
     let segs = &route.segs;
@@ -357,7 +356,7 @@ pub fn note_size(m: &Measured, id: LabelId) -> (f32, f32) {
 pub fn draw_note(scene: &mut Scene, m: &Measured, id: LabelId, r: &Rect, fill: Option<Paint>, skin: &Skin) {
     let fill = fill.unwrap_or_else(|| skin.fill(&["note"], skin::NOTE_FILL));
     let border = skin.border(&["note"], skin::BORDER);
-    note_shape(scene, skin.style.note_kind, r.x, r.y, r.w, r.h, fill, &border, 1.0);
+    note_shape(scene, skin.shapes.note_kind, r.x, r.y, r.w, r.h, fill, &border, 1.0);
     m.text_at(scene, id, r.x + NOTE_PAD.0, r.y + NOTE_PAD.1, HAlign::Left);
 }
 

@@ -9,6 +9,7 @@
 
 use super::gcommon::*;
 use crate::plantuml::creole;
+use crate::plantuml::layout::graph::RankDir;
 use crate::plantuml::lexer::{err, first_word, rest_after_word, unquote, Cursor, Line};
 use crate::plantuml::model::{Ctx, LabelId};
 
@@ -67,9 +68,7 @@ pub type Ent = super::gcommon::Ent<Def>;
 pub struct Model {
     pub ents: Vec<Ent>,
     pub links: Vec<Link>,
-    pub lr: bool,
-    /// Ranks run bottom to top or right to left (Mermaid `direction BT|RL`).
-    pub reverse: bool,
+    pub dir: RankDir,
     /// Per composite state: whether its regions are stacked (`--`) or side by side (`||`).
     pub stacked: Vec<(usize, bool)>,
 }
@@ -86,11 +85,11 @@ struct P<'a> {
     scopes: Vec<Scope>,
     stacked: Vec<(usize, bool)>,
     last: Option<usize>,
-    lr: bool,
+    dir: RankDir,
 }
 
 pub fn parse(lines: &[Line], ctx: &mut Ctx) -> Result<Model, String> {
-    let mut p = P { ctx, ents: Vec::new(), links: Vec::new(), scopes: Vec::new(), stacked: Vec::new(), last: None, lr: false };
+    let mut p = P { ctx, ents: Vec::new(), links: Vec::new(), scopes: Vec::new(), stacked: Vec::new(), last: None, dir: RankDir::TB };
     let mut cur = Cursor::new(lines);
     while let Some(l) = cur.next() {
         if !l.text.is_empty() {
@@ -103,7 +102,7 @@ pub fn parse(lines: &[Line], ctx: &mut Ctx) -> Result<Model, String> {
     if p.ents.is_empty() {
         return err(lines.first().map_or(1, |l| l.no), "the state diagram is empty");
     }
-    Ok(Model { ents: p.ents, links: p.links, lr: p.lr, reverse: false, stacked: p.stacked })
+    Ok(Model { ents: p.ents, links: p.links, dir: p.dir, stacked: p.stacked })
 }
 
 impl P<'_> {
@@ -168,11 +167,11 @@ impl P<'_> {
         let word = first_word(&lower);
         match lower.as_str() {
             "left to right direction" => {
-                self.lr = true;
+                self.dir = RankDir::LR;
                 return Ok(());
             }
             "top to bottom direction" => {
-                self.lr = false;
+                self.dir = RankDir::TB;
                 return Ok(());
             }
             "}" => return self.close(l),

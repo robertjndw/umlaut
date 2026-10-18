@@ -86,7 +86,7 @@ pub fn layout_info(model: &Model, skin: &Skin, m: &Measured) -> Result<(Body, Gr
                 g.clusters[*c] = Cluster { parent, inset, min: (nw + 28.0, nh + 44.0), arrange, title_centered: true };
             }
             (Def::State(s), Slot::Node(x)) => {
-                let (w, h, border) = node_size(s, m, model.lr);
+                let (w, h, border) = node_size(s, m, model.dir.lr());
                 g.nodes[*x] = Node { w, h, parent, border };
             }
             (Def::Note(nt), Slot::Node(x)) => {
@@ -97,7 +97,7 @@ pub fn layout_info(model: &Model, skin: &Skin, m: &Measured) -> Result<(Body, Gr
         }
     }
     let edge_of_link = gdraw::build_edges(&mut g, &slots, &model.links, m, false);
-    let opts = graph_opts(skin, model.lr, model.reverse);
+    let opts = graph_opts(skin, model.dir);
     let lay = graph::layout(&g, &opts)?;
 
     let fill_of = |look: &crate::plantuml::diagrams::gcommon::Look| look.fill.clone().unwrap_or_else(|| skin.fill(&["state"], skin::ACTIVITY_FILL));

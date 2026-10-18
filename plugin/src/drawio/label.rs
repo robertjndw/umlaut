@@ -41,7 +41,7 @@ impl TextProps {
         }
     }
 
-    fn run(&self, text: String) -> Run {
+    pub(crate) fn run(&self, text: String) -> Run {
         Run {
             text,
             bold: self.bold,
