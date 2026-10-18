@@ -1,6 +1,6 @@
 // Shared page setup for the example pictures in docs/. Diagrams are loaded with
 // read(), so the paths below are relative to this folder.
-#import "../src/lib.typ": drawio, plantuml
+#import "../src/lib.typ": drawio, mermaid, plantuml
 
 #let diagram(name) = read("diagrams/" + name)
 

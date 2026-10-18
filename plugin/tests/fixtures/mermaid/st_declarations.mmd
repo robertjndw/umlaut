@@ -1,0 +1,10 @@
+stateDiagram-v2
+    state "Waiting for the customer" as Waiting
+    Waiting --> Review
+    Review : Review
+    Review : checks the payment
+    Review : checks the address
+    Idle
+    Idle : only a description
+    Idle --> Waiting
+    Waiting --> Done : finish

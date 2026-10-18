@@ -1,0 +1,14 @@
+stateDiagram-v2
+    [*] --> Created
+    Created --> Paying : checkout
+    state Paying {
+        [*] --> Authorizing
+        Authorizing --> Captured : approved
+        Authorizing --> Declined : refused
+    }
+    state check <<choice>>
+    Paying --> check : done
+    check --> Shipped : paid
+    check --> Cancelled : failed
+    Shipped --> [*]
+    Cancelled --> [*]

@@ -1,0 +1,15 @@
+---
+title: Numbered flow
+---
+sequenceDiagram
+    autonumber
+    Alice->>John: Hello John, how are you?
+    loop HealthCheck
+        John->>John: Fight against hypochondria
+    end
+    Note right of John: Rational thoughts!
+    John-->>Alice: Great!
+    participant API@{ "type": "database" }
+    participant Q@{ "type": "queue" }
+    John->>API: store
+    API->>Q: enqueue

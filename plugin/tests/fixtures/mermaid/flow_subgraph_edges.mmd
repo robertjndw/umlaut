@@ -1,0 +1,11 @@
+flowchart LR
+    subgraph one [Group one]
+        A1 --> A2
+    end
+    subgraph two [Group two]
+        B1 --> B2
+    end
+    X --> one
+    one --> two
+    two --> Y
+    A2 --> B1

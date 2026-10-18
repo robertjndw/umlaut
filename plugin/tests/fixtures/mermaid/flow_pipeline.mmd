@@ -1,0 +1,24 @@
+flowchart LR
+    subgraph Source
+        Push([git push]) --> Hook{Webhook}
+    end
+    subgraph CI [Continuous integration]
+        direction TB
+        Lint[Lint] --> Test[Unit tests]
+        Test --> Build[Build image]
+        Build --> Scan[[Security scan]]
+    end
+    subgraph CD [Delivery]
+        Stage[(Staging)] --> Smoke{Smoke tests}
+        Smoke -->|pass| Prod((Production))
+        Smoke -->|fail| Rollback>Rollback]
+    end
+    Hook -->|main| Lint
+    Hook -.->|other branches| Lint
+    Scan ==> Stage
+    Rollback -.-> Stage
+    Prod --> Notify[/Notify team/]
+    classDef good fill:#cfc,stroke:#0a0
+    classDef bad fill:#fcc,stroke:#c00
+    class Prod good
+    class Rollback bad

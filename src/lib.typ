@@ -108,5 +108,41 @@
   _two-pass(_plugin.plantuml_labels, _plugin.plantuml_layout, payload, width, height, scale, font, warn)
 }
 
+/// Draws a Mermaid diagram with native Typst elements.
+///
+/// Flowcharts, sequence diagrams, class diagrams and state diagrams are supported, in
+/// Mermaid's default theme. The plugin lays the diagram out, using the real size of
+/// every label in the font the diagram ends up in, so boxes always fit their text.
+/// Placement comes from Graphviz, so it differs from mermaid.js in details. Pass the
+/// source as text: `mermaid(read("flow.mmd"))`.
+///
+/// - source (str, bytes): Mermaid source, with or without front matter.
+/// - width (length, ratio, relative, auto): Width of the diagram. A ratio such as
+///   `100%` or a mix like `100% - 2cm` is taken against the space the diagram is
+///   placed in. `auto` uses the laid-out size.
+/// - height (length, ratio, relative, auto): Height of the diagram, resolved like
+///   `width`; a ratio needs a container with a fixed height (a fixed-size `block` or
+///   `box`, not an `auto`-sized page). With both `width` and `height` the diagram fits
+///   inside and keeps its proportions.
+/// - scale (ratio): Extra scaling on top of `width` and `height`. Stroke widths and
+///   font sizes scale with it.
+/// - font (str, array, auto): Font for all text. `auto` uses the document font.
+/// - warn (bool, str): What to do with what could not be drawn faithfully (`%%{init}%%`
+///   directives, `click` statements, ...) and with layout problems such as a line
+///   running through a box or two lines drawn over each other. `true` attaches them as
+///   `<umlaut-warnings>` metadata, `"error"` makes any of them fail compilation,
+///   `false` drops them.
+/// -> content
+#let mermaid(source, width: auto, height: auto, scale: 100%, font: auto, warn: true) = {
+  let payload = validate.source(source)
+  let width = validate.size("width", width)
+  let height = validate.size("height", height)
+  let scale = validate.scale(scale)
+  let font = validate.font(font)
+  let warn = validate.warn(warn)
+
+  _two-pass(_plugin.mermaid_labels, _plugin.mermaid_layout, payload, width, height, scale, font, warn)
+}
+
 // Renders the plugin's hand-written fixture scene; used by the tests.
 #let _debug-scene(..args) = render.diagram(cbor(_plugin.debug_scene()), ..args)

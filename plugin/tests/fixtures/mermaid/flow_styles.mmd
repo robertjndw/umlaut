@@ -1,0 +1,16 @@
+flowchart LR
+    classDef default fill:#fff,stroke:#333
+    classDef hot fill:#f96,stroke:#c30,stroke-width:3px,color:#300
+    classDef cool fill:#9cf,stroke:#06c,stroke-dasharray:5 5
+    A[Plain] --> B[Hot]:::hot
+    B --> C[Cool]:::cool & D[Both]
+    class D hot,cool
+    style A fill:#ffd,stroke:#aa0
+    linkStyle 0 stroke:#f00,stroke-width:4px
+    linkStyle 1,2 stroke:#00f,stroke-dasharray:3 3,color:#00f
+    linkStyle default stroke:#555
+    subgraph s [Styled]
+        E --> F
+    end
+    style s fill:#eef,stroke:#66c,stroke-width:2px
+    C --> E

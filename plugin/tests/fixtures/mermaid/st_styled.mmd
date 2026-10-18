@@ -1,0 +1,10 @@
+stateDiagram-v2
+    direction BT
+    classDef hot fill:#f96,stroke:#333,stroke-width:3px,color:#000
+    classDef cold fill:#9cf,color:#012
+    [*] --> A
+    A:::hot --> B
+    B --> C
+    class C cold
+    style B fill:#ffd,stroke:#a80,stroke-dasharray:4 2
+    click A callback

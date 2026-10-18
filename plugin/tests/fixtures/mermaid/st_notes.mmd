@@ -1,0 +1,10 @@
+stateDiagram-v2
+    direction LR
+    [*] --> Idle
+    Idle --> Busy : start
+    note right of Idle : Waits for work
+    note left of Busy
+        Handles one job
+        at a time
+    end note
+    Busy --> Idle : done

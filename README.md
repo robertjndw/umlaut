@@ -1,17 +1,18 @@
 # umlaut
 
-draw.io and PlantUML diagrams for [Typst](https://typst.app), drawn with native Typst elements at compile time. No Java, no Graphviz install, no SVG round trip: the diagram becomes shapes and text in your document, in your fonts.
+draw.io, PlantUML and Mermaid diagrams for [Typst](https://typst.app), drawn with native Typst elements at compile time. No Java, no Graphviz install, no SVG round trip: the diagram becomes shapes and text in your document, in your fonts.
 
 ![Showcase](https://raw.githubusercontent.com/robertjndw/umlaut/main/docs/showcase.png)
 
 ```typ
-#import "@local/umlaut:0.1.0": drawio, plantuml
+#import "@local/umlaut:0.1.0": drawio, mermaid, plantuml
 
 #drawio(read("architecture.drawio"))
 #plantuml(read("login.puml"))
+#mermaid(read("pipeline.mmd"))
 ```
 
-A WebAssembly plugin turns both formats into rectangles, paths and text runs, which umlaut draws with Typst's own elements. For PlantUML, Typst measures every label in a first pass so boxes always fit their text, then the plugin lays the diagram out. Class, state, use case and component diagrams are placed and routed by [Graphviz](https://graphviz.org) dot, compiled into the plugin. The output is vector, selectable text, and follows your document font and `set text` rules.
+A WebAssembly plugin turns all three formats into rectangles, paths and text runs, which umlaut draws with Typst's own elements. For PlantUML and Mermaid, Typst measures every label in a first pass so boxes always fit their text, then the plugin lays the diagram out. Flowcharts and class, state, use case and component diagrams are placed and routed by [Graphviz](https://graphviz.org) dot, compiled into the plugin. The output is vector, selectable text, and follows your document font and `set text` rules.
 
 ## Installing from GitHub
 
@@ -32,7 +33,7 @@ irm https://raw.githubusercontent.com/robertjndw/umlaut/main/install.ps1 | iex
 Then import it from the `local` namespace:
 
 ```typ
-#import "@local/umlaut:0.1.0": drawio, plantuml
+#import "@local/umlaut:0.1.0": drawio, mermaid, plantuml
 ```
 
 The script copies the package to Typst's [local package directory](https://github.com/typst/packages#local-packages), or to `TYPST_PACKAGE_PATH` if that's set. For a specific tag or branch, use `sh -s -- --ref v0.1.0` (on Windows, set `$env:UMLAUT_REF` first). In a clone, `make install` installs your working tree.
@@ -44,6 +45,7 @@ Packages can't read files from your project, so you pass the file's contents wit
 ```typ
 #drawio(read("architecture.drawio"))
 #plantuml(read("login.puml"))
+#mermaid(read("pipeline.mmd"))
 ```
 
 If you'd rather write `#drawio("architecture.drawio")`, define a helper in your own file. `read()` there resolves paths relative to your file:
@@ -52,12 +54,14 @@ If you'd rather write `#drawio("architecture.drawio")`, define a helper in your 
 #import "@local/umlaut:0.1.0"
 #let drawio(path, ..args) = umlaut.drawio(read(path), ..args)
 #let plantuml(path, ..args) = umlaut.plantuml(read(path), ..args)
+#let mermaid(path, ..args) = umlaut.mermaid(read(path), ..args)
 ```
 
 Sources can also be plain strings, so inline diagrams work too:
 
 ```typ
 #plantuml("Alice -> Bob : hello")
+#mermaid("flowchart LR; A --> B")
 ```
 
 ### draw.io
@@ -125,6 +129,38 @@ A show rule turns fenced `plantuml` blocks into diagrams:
 
 The diagram then uses the raw block's monospace font. Pass `font:` in the rule if you want something else.
 
+### Mermaid
+
+The first line names the diagram type: `flowchart` (or `graph`), `sequenceDiagram`, `classDiagram` or `stateDiagram-v2`. Front matter with a `title`, `%%` comments and `;` between statements work as in Mermaid.
+
+```typ
+#mermaid(read("pipeline.mmd"), width: 100%)
+```
+
+**Flowchart**
+
+![Flowchart](https://raw.githubusercontent.com/robertjndw/umlaut/main/docs/mermaid-flowchart.png)
+
+**Sequence**
+
+![Mermaid sequence diagram](https://raw.githubusercontent.com/robertjndw/umlaut/main/docs/mermaid-sequence.png)
+
+**Class**
+
+![Mermaid class diagram](https://raw.githubusercontent.com/robertjndw/umlaut/main/docs/mermaid-class.png)
+
+**State**
+
+![Mermaid state diagram](https://raw.githubusercontent.com/robertjndw/umlaut/main/docs/mermaid-state.png)
+
+Diagrams use Mermaid's syntax and its default theme, but Graphviz places them, not Mermaid's dagre, so the arrangement can differ from what mermaid.live shows. The sources are in [`examples/diagrams/`](examples/diagrams) too.
+
+Fenced `mermaid` blocks work the same way as PlantUML ones:
+
+```typ
+#show raw.where(lang: "mermaid"): it => mermaid(it.text)
+```
+
 ### Size, scale and fonts
 
 ```typ
@@ -136,7 +172,7 @@ The diagram then uses the raw block's monospace font. Pass `font:` in the rule i
 
 ![Styling](https://raw.githubusercontent.com/robertjndw/umlaut/main/docs/styling.png)
 
-Stroke widths and text scale together with the diagram. Without `width` or `height` a diagram has its natural size: draw.io pixels become points, and PlantUML diagrams are sized from your text size.
+Stroke widths and text scale together with the diagram. Without `width` or `height` a diagram has its natural size: draw.io pixels become points, and PlantUML and Mermaid diagrams are sized from your text size.
 
 ### Figures
 
@@ -166,8 +202,8 @@ Typst counts these figures as images, so they share a counter and an outline wit
 
 By default nothing makes compilation fail just because the result is imperfect. Two kinds of problems are collected as warnings:
 
-- things the renderer could not draw faithfully: an unknown draw.io stencil, an embedded image, `!theme`, `skinparam handwritten`, ...
-- layout problems in class, state, use case and component diagrams: a line running through a box or across a container's title, two lines drawn over each other, or a label that touches a box or sits closer to another line than to its own. Each one names the elements and the source line of the link, e.g. `layout: link "Bus" -> "Search" on line 46 and link "Search" -> "SI" on line 47 are drawn over each other for 104 pt`.
+- things the renderer could not draw faithfully: an unknown draw.io stencil, an embedded image, `!theme`, `skinparam handwritten`, Mermaid's `%%{init}%%` directives and `click`, ...
+- layout problems in flowcharts and class, state, use case and component diagrams: a line running through a box or across a container's title, two lines drawn over each other, or a label that touches a box or sits closer to another line than to its own. Each one names the elements and the source line of the link, e.g. `layout: link "Bus" -> "Search" on line 46 and link "Search" -> "SI" on line 47 are drawn over each other for 104 pt`.
 
 Warnings are attached as metadata, which you can list:
 
@@ -187,7 +223,7 @@ To make sure no problem goes unnoticed, pass `warn: "error"`: any warning then f
 #let plantuml(path, ..args) = umlaut.plantuml(read(path), warn: "error", ..args)
 ```
 
-A layout problem can often be fixed in the source: change a link's length (`-->` vs `--->`) or direction (`-up->`, `-left->`), reorder declarations, or try `skinparam linetype ortho`. Pass `warn: false` to attach nothing. Broken XML, PlantUML syntax errors and unsupported diagram types are always errors, with a line number where there is one.
+A layout problem can often be fixed in the source: change a link's length (`-->` vs `--->`) or direction (`-up->`, `-left->`), reorder declarations, or try `skinparam linetype ortho`. Pass `warn: false` to attach nothing. Broken XML, PlantUML and Mermaid syntax errors and unsupported diagram types are always errors, with a line number where there is one.
 
 ## Reference
 
@@ -209,6 +245,15 @@ A layout problem can often be fixed in the source: change a link's length (`-->`
   scale: 100%,
   font: auto,    // auto uses the document font
   warn: true,    // like drawio; also reports layout problems
+)
+
+#mermaid(
+  source,        // str or bytes
+  width: auto,   // same arguments as plantuml
+  height: auto,
+  scale: 100%,
+  font: auto,
+  warn: true,
 )
 ```
 
@@ -251,6 +296,24 @@ Not supported:
 - The preprocessor: `!include`, `!define`, `!procedure`, `!if`, ... (an error). `!theme` and `!pragma` are ignored with a warning, use `skinparam` instead
 - Object, timing, Gantt, mind map, WBS, wireframe (salt), JSON, YAML, ER and the other diagram families (an error naming the type)
 - `newpage` in sequence diagrams, `scale` (use the `scale` argument of `plantuml()`), `skinparam handwritten`
+
+### Mermaid
+
+| Diagram | Covered |
+| --- | --- |
+| Flowchart | all directions, the classic node shapes (rectangle, rounded, stadium, subroutine, cylinder, circle, double circle, asymmetric, rhombus, hexagon, parallelogram, trapezoid) and common `@{ shape: ... }` names, every link type and length, link labels, chains and `&`, nested subgraphs and links to them, `classDef`, `class`, `:::`, `style`, `linkStyle` |
+| Sequence | participants, actors and the `@{ "type": ... }` kinds, all arrow types, activation (also `+` / `-`), `loop`, `alt`, `opt`, `par`, `critical`, `break`, `rect`, notes, `create` and `destroy`, boxes, `autonumber` |
+| Class | classes with members, generics (`~T~`), annotations, static and abstract members, all relation types, cardinalities and labels, lollipop interfaces, namespaces, notes, `direction`, styles |
+| State | states with descriptions, `[*]`, composite states, concurrent regions, choice, fork and join, notes, `direction`, styles |
+
+Labels may use `<br>`, `<b>`, `<i>`, entity codes like `#quot;` and markdown strings (`` "`**bold** *italic*`" ``). The title comes from front matter or a `title` statement.
+
+Not supported:
+
+- The other diagram types: ER, Gantt, pie, journey, git graph, mind map, timeline and so on (an error naming the type)
+- Themes and `%%{init}%%` configuration (ignored with a warning; diagrams always use the default theme)
+- `click`, callbacks and links (ignored with a warning), and `direction` inside a subgraph
+- Automatic wrapping of long flowchart labels; break them with `<br>`
 
 ## Building from source
 

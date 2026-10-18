@@ -1,0 +1,11 @@
+---
+title: Order lifecycle
+---
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Submitted : submit
+    Submitted --> Paid : pay
+    Submitted --> Cancelled : cancel
+    Paid --> Shipped
+    Shipped --> [*]
+    Cancelled --> [*]

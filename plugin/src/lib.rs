@@ -22,14 +22,20 @@
 //!   sizes: one pair of f32 LE (width, height) in pt per label, in the order
 //!          `plantuml_labels` returned them, as measured by Typst
 //!
+//! `mermaid_labels(source)` -> CBOR list of labels, like `plantuml_labels`
+//!   source: the Mermaid text, UTF-8
+//!
+//! `mermaid_layout(source, sizes)` -> scene, like `plantuml_layout`
+//!
 //! `debug_scene()` -> the fixture scene from `scene.rs` (wasm only, for renderer tests)
 //!
 //! Errors are returned as plain messages and show up as Typst errors, so they should
-//! read well to a document author (for PlantUML include the line number).
+//! read well to a document author (for PlantUML and Mermaid include the line number).
 
 pub mod color;
 pub mod drawio;
 pub mod graphviz;
+pub mod mermaid;
 pub mod plantuml;
 pub mod scene;
 
@@ -106,6 +112,14 @@ pub fn plantuml_labels(source: &[u8]) -> Result<Vec<u8>, String> {
 
 pub fn plantuml_layout(source: &[u8], sizes: &[u8]) -> Result<Vec<u8>, String> {
     plantuml::layout(source, &parse_sizes(sizes)?)?.to_cbor()
+}
+
+pub fn mermaid_labels(source: &[u8]) -> Result<Vec<u8>, String> {
+    to_cbor(&mermaid::labels(source)?)
+}
+
+pub fn mermaid_layout(source: &[u8], sizes: &[u8]) -> Result<Vec<u8>, String> {
+    mermaid::layout(source, &parse_sizes(sizes)?)?.to_cbor()
 }
 
 #[cfg(test)]

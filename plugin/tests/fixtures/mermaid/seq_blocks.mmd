@@ -1,0 +1,26 @@
+sequenceDiagram
+    Alice->>Bob: Start
+    loop Every minute
+        Bob->>Alice: Poll
+        alt is sick
+            Alice->>Bob: Not so good
+        else is well
+            Alice->>Bob: Fine
+        end
+        opt Extra
+            Bob-->>Alice: Bonus
+        end
+    end
+    par Alice to Bob
+        Alice->>Bob: One
+    and Alice to John
+        Alice->>John: Two
+    end
+    critical Establish a connection
+        Alice-)Bob: connect
+    option Network timeout
+        Bob--xAlice: timeout
+    end
+    break when the booking process fails
+        Bob-->>Alice: show failure
+    end

@@ -97,16 +97,29 @@ fn parse(source: &[u8]) -> Result<Parsed, String> {
     Ok(Parsed { ctx, diagram })
 }
 
+/// Mermaid sources that were handed to `plantuml()` fail with PlantUML syntax errors that
+/// say nothing about the real mistake, so the error gets a pointer.
+fn mermaid_hint(source: &[u8], e: String) -> String {
+    let first = String::from_utf8_lossy(source);
+    let word = first.lines().map(str::trim).find(|l| !l.is_empty()).and_then(|l| l.split(|c: char| c.is_whitespace() || c == ';').next()).unwrap_or("");
+    let mermaid = matches!(word, "flowchart" | "graph" | "sequenceDiagram" | "classDiagram" | "classDiagram-v2" | "stateDiagram" | "stateDiagram-v2");
+    if mermaid {
+        format!("{e} (this looks like Mermaid, use mermaid())")
+    } else {
+        e
+    }
+}
+
 /// Pass 1: parse and return every label whose size the layout needs, in a stable order.
 /// `layout` receives one measured size per label, in this order, so the order must be
 /// a pure function of `source`.
 pub fn labels(source: &[u8]) -> Result<Vec<Label>, String> {
-    Ok(parse(source)?.ctx.reg.labels)
+    Ok(parse(source).map_err(|e| mermaid_hint(source, e))?.ctx.reg.labels)
 }
 
 /// Pass 2: lay out with `sizes[i] = (width, height)` in pt for `labels(source)[i]`.
 pub fn layout(source: &[u8], sizes: &[(f32, f32)]) -> Result<Scene, String> {
-    let Parsed { ctx, diagram } = parse(source)?;
+    let Parsed { ctx, diagram } = parse(source).map_err(|e| mermaid_hint(source, e))?;
     if sizes.len() != ctx.reg.labels.len() {
         return Err(format!(
             "the plugin expected {} label sizes but got {}; the source changed between the two passes",

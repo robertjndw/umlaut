@@ -1,0 +1,23 @@
+sequenceDiagram
+    autonumber
+    actor Customer
+    participant Shop
+    participant Payments
+    participant Stock
+    Customer->>Shop: place order
+    activate Shop
+    Shop->>Stock: reserve items
+    Stock-->>Shop: reserved
+    Shop->>Payments: charge card
+    activate Payments
+    alt accepted
+        Payments-->>Shop: receipt
+        Shop-->>Customer: confirmation
+    else declined
+        Payments-->>Shop: declined
+        Shop->>Stock: release items
+        Shop-->>Customer: try another card
+    end
+    deactivate Payments
+    deactivate Shop
+    Note right of Stock: reservations expire after 15 minutes

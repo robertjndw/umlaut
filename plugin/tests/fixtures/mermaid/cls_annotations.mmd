@@ -1,0 +1,21 @@
+classDiagram
+    class Shape {
+        <<interface>>
+        noOfVertices
+        draw()
+    }
+    class Color {
+        <<enumeration>>
+        RED
+        BLUE
+        GREEN
+    }
+    class Service
+    <<service>> Service
+    class Util {
+        +String CONSTANT$
+        +helper(x) int$
+        +abstractOp() void*
+    }
+    Shape <|.. Square
+    Service --> Util

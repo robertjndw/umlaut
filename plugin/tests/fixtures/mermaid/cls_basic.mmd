@@ -1,0 +1,22 @@
+---
+title: Animals
+---
+classDiagram
+    class Animal {
+        +String name
+        +int age
+        +isMammal() bool
+        +mate()
+    }
+    class Duck {
+        +String beakColor
+        +swim()
+        +quack()
+    }
+    class Fish {
+        -int sizeInFeet
+        -canEat()
+    }
+    Animal <|-- Duck
+    Animal <|-- Fish
+    Animal : +Date born

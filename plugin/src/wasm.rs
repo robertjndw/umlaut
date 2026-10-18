@@ -17,6 +17,16 @@ pub fn plantuml_layout(source: &[u8], sizes: &[u8]) -> Result<Vec<u8>, String> {
     crate::plantuml_layout(source, sizes)
 }
 
+#[wasm_func]
+pub fn mermaid_labels(source: &[u8]) -> Result<Vec<u8>, String> {
+    crate::mermaid_labels(source)
+}
+
+#[wasm_func]
+pub fn mermaid_layout(source: &[u8], sizes: &[u8]) -> Result<Vec<u8>, String> {
+    crate::mermaid_layout(source, sizes)
+}
+
 /// Hand-written scene for checking the Typst renderer on its own.
 #[wasm_func]
 pub fn debug_scene() -> Result<Vec<u8>, String> {

@@ -1,0 +1,14 @@
+classDiagram
+    direction LR
+    namespace BaseShapes {
+        class Triangle
+        class Rectangle {
+            double width
+            double height
+        }
+    }
+    class Canvas
+    Canvas --> Triangle
+    Canvas --> Rectangle
+    note for Canvas "Draws everything"
+    note "A free floating note"

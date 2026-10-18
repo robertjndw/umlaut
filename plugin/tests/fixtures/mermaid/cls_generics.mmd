@@ -1,0 +1,10 @@
+classDiagram
+    class Square~Shape~ {
+        int id
+        List~int~ position
+        setPoints(List~int~ points)
+        getPoints() List~int~
+        List~List~int~~ nested
+    }
+    class Box["A box with a label"]
+    Square --> Box

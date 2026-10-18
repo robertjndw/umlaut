@@ -1,0 +1,32 @@
+classDiagram
+    class Repository~T~ {
+        <<interface>>
+        +find(id) T
+        +save(item T) void
+    }
+    class Book {
+        -String isbn
+        -int pages
+        +describe() String
+    }
+    class BookRepository {
+        +find(id) Book
+    }
+    class Member {
+        -String name
+        +borrow(book Book) Loan
+    }
+    class Loan {
+        -Date dueDate
+        +isOverdue() bool
+    }
+    class LoanStatus {
+        <<enumeration>>
+        ACTIVE
+        RETURNED
+        OVERDUE
+    }
+    Repository <|.. BookRepository
+    Member "1" --> "*" Loan : has
+    Loan "*" --> "1" Book
+    Loan --> LoanStatus

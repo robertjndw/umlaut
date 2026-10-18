@@ -1,0 +1,13 @@
+stateDiagram-v2
+    [*] --> Active
+    state Active {
+        [*] --> Working
+        Working --> Paused : pause
+        Paused --> Working : resume
+        state Nested {
+            [*] --> Inner
+            Inner --> [*]
+        }
+        Working --> Nested
+    }
+    Active --> [*] : stop

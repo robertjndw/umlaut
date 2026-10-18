@@ -1,0 +1,18 @@
+flowchart TB
+    subgraph Backend [Backend services]
+        API --> Worker
+        subgraph Storage
+            DB[(Postgres)]
+            Cache[(Redis)]
+        end
+        Worker --> DB
+        API --> Cache
+    end
+    subgraph Frontend
+        Web --> Mobile
+    end
+    User --> Web
+    Web --> API
+    Empty
+    subgraph Nothing
+    end
